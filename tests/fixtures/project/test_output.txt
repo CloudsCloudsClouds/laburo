@@ -1,0 +1,6 @@
+# Running:
+
+UserTest#test_valid = .
+
+Finished in 0.102s, 9.8 runs/s, 9.8 assertions/s.
+1 runs, 1 assertions, 0 failures, 0 errors, 0 skips

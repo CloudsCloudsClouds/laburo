@@ -63,6 +63,11 @@ Rules:
 - Local branches/commits/worktrees are allowed for coordination. No pushes.
 - Do not rewrite history or force-push.
 - Keep generated files (`target/`, `.laburo/`, report PDFs) out of git.
+- **Parallel builds:** use `scripts/pod.sh <pod> check/test/...` so each pod gets
+  its own target dir; it uses sccache when available. Do not run repo-wide
+  `cargo fmt` while another pod is editing.
+- **Fast tests:** `cargo nextest run --all-targets` is the fast local loop;
+  `cargo test --all-targets` remains the acceptance command.
 - No secrets. No network in tests. No nondeterministic output.
 - No invented numbers or domain facts.
 - Tier 2 features are behind interfaces/flags; Tier 1 works without AI.

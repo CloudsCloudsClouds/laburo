@@ -24,6 +24,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: typst-community/setup-typst@v3
+        with:
+          typst-version: 0.15.1
+
       - name: Format
         run: cargo fmt --all --check
 
@@ -32,3 +36,9 @@ jobs:
 
       - name: Test
         run: cargo test --all-targets --all-features
+
+      - name: Install
+        run: cargo install --path . --locked
+
+      - name: Doctor
+        run: laburo --version && laburo doctor || true

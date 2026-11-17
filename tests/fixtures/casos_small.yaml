@@ -1,0 +1,28 @@
+modulos:
+  - id: "M-02"
+    nombre: "Booking"
+    casos:
+      - id: "UC-M02-01"
+        nombre: "Booking Tour"
+        actor: "Turista"
+        regla: "El tour debe existir"
+        prioridad: "Alta"
+        estado: "aprobado"
+        pruebas:
+          - id: "TC-M02-01-1"
+            titulo: "La reserva persiste"
+            tipo: "Funcional"
+            nivel: "unit"
+            ubicacion: "test/models/booking_test.rb"
+            prioridad: "Alta"
+            estado: "green"
+            objetivo: "Comprobar que la reserva persiste con los datos del cliente."
+            esperado: "La reserva persiste con su estado inicial."
+            precondiciones:
+              - ["Estado inicial", "Base de datos vacía"]
+            datos:
+              - ["Nombre", "Ana María Rojas Vargas"]
+            pasos:
+              - ["1", "Crear una reserva", "Ana María Rojas Vargas", "La reserva se crea"]
+              - ["2", "Releer la reserva", "—", "Los datos coinciden"]
+            criterio: "La reserva existe con los cuatro datos."

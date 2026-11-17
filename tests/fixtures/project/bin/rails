@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake Rails runner for Laburo's fixture project.
+# It ignores arguments and prints a captured Minitest run.
+cat "$(dirname "$0")/../test_output.txt"
+exit 0

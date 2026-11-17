@@ -1,0 +1,13 @@
+[32m# Running:[0m
+
+UserTest#test_valid_user = 0.010 s = [32m.[0m
+UserTest#test_rejects_blank_name = 0.005 s = [31mF[0m
+
+[31mFailure:[0m
+UserTest#test_rejects_blank_name [test/models/user_test.rb:8]:
+Expected true to be false.
+
+bin/rails test test/models/user_test.rb:8
+
+Finished in 0.015000s, 133.3333 runs/s, 133.3333 assertions/s.
+[1m2 runs, 2 assertions, 1 failures, 0 errors, 0 skips[0m

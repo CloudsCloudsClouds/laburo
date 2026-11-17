@@ -1,0 +1,7 @@
+[32m# Running:[0m
+
+UserTest#test_valid_user = 0.012 s = [32m.[0m
+UserTest#test_rejects_blank_name = 0.004 s = [32m.[0m
+
+Finished in 0.016000s, 125.0000 runs/s, 125.0000 assertions/s.
+[1m2 runs, 2 assertions, 0 failures, 0 errors, 0 skips[0m

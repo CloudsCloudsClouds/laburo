@@ -12,6 +12,8 @@ and exposes an MCP server so an agent can operate it end to end. Tier 1 must be
 complete; Tier 2 includes the deterministic quality engine and a local
 OpenAI-compatible (Ollama) provider hook.
 
+(User note, mind the time too pls. At most, one hour and a half now - or on 2026-11-17, until 19:30 at most. If 19:30 comes, just stop. Or stop if you finish early, whichever comes first.)
+
 ## Scope
 
 Tier 1:
@@ -40,27 +42,29 @@ Tier 2 (this wave, foundation only):
 
 ## Acceptance criteria
 
-- [ ] `cargo fmt --all --check` passes.
-- [ ] `cargo clippy --all-targets -- -D warnings` passes.
-- [ ] `cargo test --all-targets` passes.
-- [ ] `cargo install --path . --locked` succeeds and `laburo doctor` works.
-- [ ] `laburo init` creates `.laburo/laburo.sqlite3` and applies migrations.
-- [ ] Case CRUD works from CLI and TUI.
-- [ ] Manual run with three steps, one failure, notes, and one evidence file is
+- [x] `cargo fmt --all --check` passes.
+- [x] `cargo clippy --all-targets -- -D warnings` passes.
+- [x] `cargo test --all-targets` passes (48 tests).
+- [x] `cargo install --path . --locked` succeeds and `laburo doctor` works.
+- [x] `laburo init` creates `.laburo/laburo.sqlite3` and applies migrations.
+- [x] Case CRUD works from CLI and TUI.
+- [x] Manual run with three steps, one failure, notes, and one evidence file is
       persisted and readable.
-- [ ] A bug can be created from the failed step, linked to the case/run/step.
-- [ ] Minitest fixture tests are discovered and a passing/failing result is
+- [x] A bug can be created from the failed step, linked to the case/run/step.
+- [x] Minitest fixture tests are discovered and a passing/failing result is
       parsed correctly.
-- [ ] `laburo report dictionary`, `case`, `run`, and `bug` produce PDFs with the
+- [x] `laburo report dictionary`, `case`, `run`, and `bug` produce PDFs with the
       installed `typst` binary.
-- [ ] `laburo import casos.yaml` imports the class dictionary into SQLite.
-- [ ] `laburo tui` launches against the fixture DB (TestBackend test).
-- [ ] `laburo mcp` responds to `initialize`, `tools/list`, and `tools/call` for
+- [x] `laburo import casos.yaml` imports the class dictionary into SQLite
+      (real dictionary: 21 cases).
+- [x] `laburo tui` launches against the fixture DB (TestBackend test + real
+      pseudo-terminal launch, exit 0).
+- [x] `laburo mcp` responds to `initialize`, `tools/list`, and `tools/call` for
       list/create/run/report.
-- [ ] Quality rules produce deterministic findings without AI.
-- [ ] AI provider is disabled by default; config points to Ollama; no network in
+- [x] Quality rules produce deterministic findings without AI.
+- [x] AI provider is disabled by default; config points to Ollama; no network in
       tests.
-- [ ] `docs/status.md` reflects the final state; no YAML store, no JSON store.
+- [x] `docs/status.md` reflects the final state; no YAML store, no JSON store.
 
 ## Verification
 

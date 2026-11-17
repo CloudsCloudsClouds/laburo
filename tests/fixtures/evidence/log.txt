@@ -1,0 +1,2 @@
+step 1: catalogue visible
+step 2: booking returned 500

@@ -1,9 +1,17 @@
-//! Laburo's library: the core domain and the adapters that feed it.
-//!
-//! The binary in `main.rs` is deliberately thin. Everything a TUI, a script, or
-//! a test needs to call lives here.
-
+pub mod ai;
 pub mod cli;
+pub mod config;
+pub mod db;
 pub mod domain;
+pub mod driver;
+pub mod import;
+pub mod mcp;
+pub mod model;
+pub mod repo;
+pub mod report;
+pub mod tui;
 
-pub use domain::{Counts, Framework, Status, TestResult, TestRun};
+pub use model::{
+    Attachment, BugReport, Dashboard, DiscoveredTest, RunMode, RunStatus, StepKind, StepRun,
+    TestCase, TestOutcome, TestRun, TestStep,
+};

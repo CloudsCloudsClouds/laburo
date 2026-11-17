@@ -22,6 +22,7 @@ laburo doctor
 ## Quick start
 
 ```bash
+make install                 # cargo install --path . --locked
 laburo init --project ../src-elizabeth-tours
 laburo case create --id TC-001 --title "Booking happy path" --tag integration
 laburo run manual TC-001
@@ -29,6 +30,15 @@ laburo bug create --case TC-001 --title "Booking fails" --severity 1
 laburo report dictionary
 laburo tui
 laburo mcp
+```
+
+For development:
+
+```bash
+make test                    # cargo test --all-targets
+make test-fast               # cargo nextest run --all-targets
+make e2e                     # fixture flow: driver + four PDFs + MCP
+scripts/pod.sh tui check     # per-pod target dir + sccache, for parallel agents
 ```
 
 ## Documentation
