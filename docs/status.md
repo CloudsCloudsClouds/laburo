@@ -2,7 +2,7 @@
 
 Live board. WIP limit: 3. One work unit per agent.
 
-Last updated: 2026-11-17 18:45
+Last updated: 2026-11-17 18:48
 
 ## Phase
 
@@ -21,6 +21,8 @@ laburo driver discover               2 fixture tests discovered
 laburo run auto TC-FIX --target ...  single run passed
 laburo tui (pseudo-terminal)         exit 0
 laburo mcp initialize/dashboard      valid JSON-RPC results
+laburo mcp full manual flow          create case -> run -> record step ->
+                                     attach evidence -> finish: status passed
 ```
 
 Real flows:
@@ -44,7 +46,8 @@ Real flows:
 - Typst reports: class-format dictionary, case dossier, run sheet, bug report;
   evidence images/logs.
 - `casos.yaml` one-way import into SQLite.
-- MCP stdio server: initialize, tools/list, tools/call (13 tools).
+- MCP stdio server: initialize, tools/list, tools/call (16 tools), including
+  manual step recording, evidence attachment, and run finalization.
 - Deterministic quality rules + AI boundary (OpenAI-compatible/Ollama,
   disabled by default).
 - Install/doctor, Makefile, CI with Typst, per-pod build helper with sccache.

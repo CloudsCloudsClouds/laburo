@@ -17,7 +17,7 @@ use crate::config::ProjectConfig;
 use crate::db::Db;
 use crate::driver;
 use crate::model::{RunMode, RunStatus, StepKind, TestCase, TestOutcome, TestRun};
-use crate::repo;
+use crate::repo::{self, EvidenceOwner};
 use crate::report::{self, ReportKind};
 
 const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
@@ -233,6 +233,9 @@ fn call_tool(server: &Server, params: &Value) -> std::result::Result<Value, Stri
         "laburo_create_case" => tool_create_case(server, args),
         "laburo_discover_tests" => tool_discover_tests(server, args),
         "laburo_run_case" => tool_run_case(server, args),
+        "laburo_record_step" => tool_record_step(server, args),
+        "laburo_attach_evidence" => tool_attach_evidence(server, args),
+        "laburo_finish_run" => tool_finish_run(server, args),
         "laburo_list_runs" => tool_list_runs(server, args),
         "laburo_get_run" => tool_get_run(server, args),
         "laburo_create_bug" => tool_create_bug(server, args),
@@ -425,6 +428,107 @@ fn tool_run_case(server: &Server, args: &Map<String, Value>) -> std::result::Res
         RunMode::Manual => Ok(manual_run_payload(&run)),
         RunMode::Single | RunMode::Composed => execute_automated(server, &case, &run, keep_going),
     }
+}
+
+fn tool_record_step(
+    server: &Server,
+    args: &Map<String, Value>,
+) -> std::result::Result<Value, String> {
+    let run_id = required_string(args, "run_id")?;
+    validate_id("run", &run_id)?;
+    let position =
+        optional_i64(args, "position")?.ok_or_else(|| "position is required".to_string())?;
+    if position < 1 {
+        return Err("position must be >= 1".to_string());
+    }
+    let status_text = required_string(args, "status")?;
+    let status =
+        RunStatus::from_str(&status_text).map_err(|err| format!("invalid status: {err}"))?;
+    let observed = optional_string(args, "observed")?.unwrap_or_default();
+    let notes = optional_string(args, "notes")?.unwrap_or_default();
+    let duration_ms = optional_i64(args, "duration_ms")?;
+    let driver_test = optional_string(args, "driver_test")?;
+    let raw_output = optional_string(args, "raw_output")?.unwrap_or_default();
+    let step = repo::record_step(
+        &server.conn,
+        &run_id,
+        position,
+        status,
+        &observed,
+        &notes,
+        duration_ms,
+        driver_test.as_deref(),
+        &raw_output,
+    )
+    .map_err(repo_error)?;
+    serde_json::to_value(step).map_err(|err| format!("serializing step: {err}"))
+}
+
+fn tool_finish_run(
+    server: &Server,
+    args: &Map<String, Value>,
+) -> std::result::Result<Value, String> {
+    let run_id = required_string(args, "run_id")?;
+    validate_id("run", &run_id)?;
+    let run = repo::finish_run(&server.conn, &run_id).map_err(repo_error)?;
+    serde_json::to_value(run).map_err(|err| format!("serializing run: {err}"))
+}
+
+fn tool_attach_evidence(
+    server: &Server,
+    args: &Map<String, Value>,
+) -> std::result::Result<Value, String> {
+    let path = required_string(args, "path")?;
+    let caption = optional_string(args, "caption")?.unwrap_or_default();
+    let run_id = optional_string(args, "run_id")?;
+    let bug_id = optional_string(args, "bug_id")?;
+    let step_run_id = optional_i64(args, "step_run_id")?;
+    let owners = usize::from(run_id.is_some())
+        + usize::from(bug_id.is_some())
+        + usize::from(step_run_id.is_some());
+    if owners != 1 {
+        return Err("provide exactly one of run_id, step_run_id, or bug_id".to_string());
+    }
+    if let Some(id) = &run_id {
+        validate_id("run", id)?;
+    }
+    if let Some(id) = &bug_id {
+        validate_id("bug", id)?;
+    }
+    let source = Path::new(&path);
+    if !source.is_file() {
+        return Err(format!("evidence file not found: {path}"));
+    }
+    let canonical = source
+        .canonicalize()
+        .map_err(|err| format!("resolving evidence path: {err}"))?;
+    let root = server
+        .config
+        .root
+        .canonicalize()
+        .unwrap_or_else(|_| server.config.root.clone());
+    let temp = std::env::temp_dir()
+        .canonicalize()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    if !canonical.starts_with(&root) && !canonical.starts_with(&temp) {
+        return Err("evidence must be inside the project or the temp directory".to_string());
+    }
+    let owner = if let Some(id) = run_id {
+        EvidenceOwner::Run(id)
+    } else if let Some(id) = bug_id {
+        EvidenceOwner::Bug(id)
+    } else {
+        EvidenceOwner::StepRun(step_run_id.expect("checked above"))
+    };
+    let attachment = repo::attach_file(
+        &server.conn,
+        &server.config.data_dir,
+        owner,
+        &canonical,
+        &caption,
+    )
+    .map_err(repo_error)?;
+    serde_json::to_value(attachment).map_err(|err| format!("serializing attachment: {err}"))
 }
 
 fn manual_run_payload(run: &TestRun) -> Value {
@@ -1078,6 +1182,56 @@ fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "laburo_record_step",
+            "description": "Record one manual step result: pass/fail/blocked/error, observed text, notes, optional driver metadata.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string"},
+                    "position": {"type": "integer", "minimum": 1},
+                    "status": {
+                        "type": "string",
+                        "enum": ["not_run", "running", "passed", "failed", "blocked", "error"]
+                    },
+                    "observed": {"type": "string"},
+                    "notes": {"type": "string"},
+                    "duration_ms": {"type": "integer", "minimum": 0},
+                    "driver_test": {"type": "string"},
+                    "raw_output": {"type": "string"}
+                },
+                "required": ["run_id", "position", "status"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "laburo_attach_evidence",
+            "description": "Copy a file into the evidence store and link it to a run, step run, or bug.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string"},
+                    "step_run_id": {"type": "integer", "minimum": 1},
+                    "bug_id": {"type": "string"},
+                    "path": {"type": "string", "description": "Existing file inside the project or temp directory."},
+                    "caption": {"type": "string"}
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "laburo_finish_run",
+            "description": "Finalize a run and derive its status from the recorded steps.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string"}
+                },
+                "required": ["run_id"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "laburo_list_runs",
             "description": "List recent runs, optionally for one case.",
             "inputSchema": {
@@ -1254,7 +1408,7 @@ mod tests {
 
         let response = dispatch(&server, &rpc(2, "tools/list", json!({}))).unwrap();
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 16);
         for name in [
             "laburo_doctor",
             "laburo_list_cases",
@@ -1262,6 +1416,9 @@ mod tests {
             "laburo_create_case",
             "laburo_discover_tests",
             "laburo_run_case",
+            "laburo_record_step",
+            "laburo_attach_evidence",
+            "laburo_finish_run",
             "laburo_list_runs",
             "laburo_get_run",
             "laburo_create_bug",
@@ -1327,7 +1484,44 @@ mod tests {
         assert!(run["run_id"].as_str().unwrap().starts_with("RUN-"));
         assert_eq!(run["mode"], "manual");
         assert_eq!(run["steps"][0]["status"], "not_run");
-        assert!(run["steps"][0]["step_run_id"].as_i64().is_some());
+        let run_id = run["run_id"].as_str().unwrap().to_string();
+        let step_run_id = run["steps"][0]["step_run_id"].as_i64().unwrap();
+
+        let recorded = call(
+            &server,
+            4,
+            "laburo_record_step",
+            json!({
+                "run_id": run_id,
+                "position": 1,
+                "status": "passed",
+                "observed": "form visible",
+                "notes": "ok"
+            }),
+        );
+        assert_eq!(recorded["isError"], false, "{recorded}");
+        assert_eq!(result_json(&recorded)["status"], "passed");
+
+        let evidence = dir.path().join("evidence.log");
+        std::fs::write(&evidence, b"step 1 ok\n").unwrap();
+        let attached = call(
+            &server,
+            5,
+            "laburo_attach_evidence",
+            json!({
+                "step_run_id": step_run_id,
+                "path": evidence.to_str().unwrap(),
+                "caption": "log"
+            }),
+        );
+        assert_eq!(attached["isError"], false, "{attached}");
+        let attachment = result_json(&attached);
+        assert_eq!(attachment["kind"], "log");
+        assert!(attachment["sha256"].as_str().unwrap().len() >= 16);
+
+        let finished = call(&server, 6, "laburo_finish_run", json!({"run_id": run_id}));
+        assert_eq!(finished["isError"], false, "{finished}");
+        assert_eq!(result_json(&finished)["status"], "passed");
     }
 
     #[test]
