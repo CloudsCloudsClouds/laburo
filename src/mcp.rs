@@ -231,6 +231,8 @@ fn call_tool(server: &Server, params: &Value) -> std::result::Result<Value, Stri
         "laburo_list_cases" => tool_list_cases(server, args),
         "laburo_get_case" => tool_get_case(server, args),
         "laburo_create_case" => tool_create_case(server, args),
+        "laburo_update_case" => tool_update_case(server, args),
+        "laburo_delete_case" => tool_delete_case(server, args),
         "laburo_discover_tests" => tool_discover_tests(server, args),
         "laburo_run_case" => tool_run_case(server, args),
         "laburo_record_step" => tool_record_step(server, args),
@@ -383,6 +385,72 @@ fn tool_create_case(
         .map_err(repo_error)?
         .ok_or_else(|| format!("case disappeared after creation: {id}"))?;
     serde_json::to_value(&case).map_err(|err| format!("serializing case: {err}"))
+}
+
+fn tool_update_case(
+    server: &Server,
+    args: &Map<String, Value>,
+) -> std::result::Result<Value, String> {
+    let id = required_string(args, "id")?;
+    validate_id("case", &id)?;
+    let mut case = repo::get_case(&server.conn, &id)
+        .map_err(repo_error)?
+        .ok_or_else(|| format!("case not found: {id}"))?;
+    if let Some(value) = optional_string(args, "title")? {
+        if value.trim().is_empty() {
+            return Err("title must not be empty".to_string());
+        }
+        case.title = value;
+    }
+    if let Some(value) = optional_string(args, "description")? {
+        case.description = value;
+    }
+    if let Some(value) = optional_string(args, "module")? {
+        case.module = value;
+    }
+    if let Some(value) = optional_string(args, "priority")? {
+        case.priority = value;
+    }
+    if let Some(value) = optional_string(args, "status")? {
+        if !matches!(value.as_str(), "draft" | "active" | "archived") {
+            return Err("status must be draft, active, or archived".to_string());
+        }
+        case.status = value;
+    }
+    if let Some(value) = optional_string(args, "environment")? {
+        case.environment = value;
+    }
+    if let Some(value) = optional_string(args, "gherkin")? {
+        case.gherkin = value;
+    }
+    if args.contains_key("tags") {
+        let tags = optional_string_array(args, "tags")?;
+        for tag in &tags {
+            validate_tag(tag)?;
+        }
+        case.tags = tags;
+    }
+    repo::update_case(&server.conn, &case).map_err(repo_error)?;
+    let case = repo::get_case(&server.conn, &id)
+        .map_err(repo_error)?
+        .ok_or_else(|| format!("case disappeared after update: {id}"))?;
+    serde_json::to_value(&case).map_err(|err| format!("serializing case: {err}"))
+}
+
+fn tool_delete_case(
+    server: &Server,
+    args: &Map<String, Value>,
+) -> std::result::Result<Value, String> {
+    let id = required_string(args, "id")?;
+    validate_id("case", &id)?;
+    if !optional_bool(args, "confirm")?.unwrap_or(false) {
+        return Err("delete requires confirm=true".to_string());
+    }
+    let deleted = repo::delete_case(&server.conn, &id).map_err(repo_error)?;
+    if !deleted {
+        return Err(format!("case not found: {id}"));
+    }
+    Ok(json!({"id": id, "deleted": true}))
 }
 
 fn tool_discover_tests(
@@ -1154,6 +1222,39 @@ fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "laburo_update_case",
+            "description": "Update case fields; tags replace the current tag set when provided.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "module": {"type": "string"},
+                    "priority": {"type": "string"},
+                    "status": {"type": "string", "enum": ["draft", "active", "archived"]},
+                    "environment": {"type": "string"},
+                    "gherkin": {"type": "string"},
+                    "tags": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "laburo_delete_case",
+            "description": "Delete a case and its runs. Requires confirm=true.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "confirm": {"type": "boolean"}
+                },
+                "required": ["id", "confirm"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "laburo_discover_tests",
             "description": "Discover Minitest tests and cache them in the database.",
             "inputSchema": {
@@ -1408,12 +1509,14 @@ mod tests {
 
         let response = dispatch(&server, &rpc(2, "tools/list", json!({}))).unwrap();
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 16);
+        assert_eq!(tools.len(), 18);
         for name in [
             "laburo_doctor",
             "laburo_list_cases",
             "laburo_get_case",
             "laburo_create_case",
+            "laburo_update_case",
+            "laburo_delete_case",
             "laburo_discover_tests",
             "laburo_run_case",
             "laburo_record_step",
@@ -1522,6 +1625,33 @@ mod tests {
         let finished = call(&server, 6, "laburo_finish_run", json!({"run_id": run_id}));
         assert_eq!(finished["isError"], false, "{finished}");
         assert_eq!(result_json(&finished)["status"], "passed");
+
+        let updated = call(
+            &server,
+            7,
+            "laburo_update_case",
+            json!({"id": "TC-001", "title": "Book a tour (updated)", "tags": ["smoke", "regression"]}),
+        );
+        assert_eq!(updated["isError"], false, "{updated}");
+        let updated = result_json(&updated);
+        assert_eq!(updated["title"], "Book a tour (updated)");
+        assert_eq!(updated["tags"].as_array().unwrap().len(), 2);
+
+        let extra = call(
+            &server,
+            8,
+            "laburo_create_case",
+            json!({"id": "TC-DEL", "title": "Delete me"}),
+        );
+        assert_eq!(extra["isError"], false, "{extra}");
+        let deleted = call(
+            &server,
+            9,
+            "laburo_delete_case",
+            json!({"id": "TC-DEL", "confirm": true}),
+        );
+        assert_eq!(deleted["isError"], false, "{deleted}");
+        assert_eq!(result_json(&deleted)["deleted"], true);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 Live board. WIP limit: 3. One work unit per agent.
 
-Last updated: 2026-11-17 18:48
+Last updated: 2026-11-17 18:52
 
 ## Phase
 
@@ -46,8 +46,9 @@ Real flows:
 - Typst reports: class-format dictionary, case dossier, run sheet, bug report;
   evidence images/logs.
 - `casos.yaml` one-way import into SQLite.
-- MCP stdio server: initialize, tools/list, tools/call (16 tools), including
-  manual step recording, evidence attachment, and run finalization.
+- MCP stdio server: initialize, tools/list, tools/call (18 tools), including
+  full case CRUD, manual step recording, evidence attachment, and run
+  finalization.
 - Deterministic quality rules + AI boundary (OpenAI-compatible/Ollama,
   disabled by default).
 - Install/doctor, Makefile, CI with Typst, per-pod build helper with sccache.
