@@ -1,0 +1,14 @@
+# Build output
+/target/
+**/*.rs.bk
+
+# Local runtime data
+/.laburo/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store

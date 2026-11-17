@@ -1,0 +1,17 @@
+[package]
+name = "laburo"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Test evidence for TQA: collect results, check congruence, publish the annex."
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
