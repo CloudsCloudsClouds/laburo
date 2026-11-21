@@ -423,6 +423,8 @@ No blocking questions. Run `/goal` against this file.
 - [x] Demo seed: 21 imported cases, 72 discovered tests, 7 real targets, 3 runs,
       one bug, expected artifacts, four PDFs, one `.eml`.
 - [x] Web auto-reopens SQLite after `.laburo` reseed.
+- [x] P1: README screenshot gallery in `docs/screenshots/`.
+- [x] P1: dashboard run trend (last 12 runs, CSS/SVG-free, no JS chart).
 - [ ] **Author:** record the 15-minute video from `DEMO.md`.
 - [ ] **Author:** create/push the public repo and add the link.
 

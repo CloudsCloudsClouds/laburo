@@ -23,8 +23,9 @@ runs, evidence, and bugs one queryable source of truth for a solo dev + AI.
 
 ### 1:00 — dashboard
 
-Show cases, runs, bugs, pass rate, recent failures, quality findings. Point at
-the seeded demo: the Rails suite is real, the evidence is real.
+Show cases, runs, bugs, pass rate, the run trend, recent failures, and quality
+findings. Point at the seeded demo: the Rails suite is real, the evidence is
+real.
 
 ### 2:30 — cases, tags, filters
 

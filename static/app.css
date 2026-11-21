@@ -734,6 +734,20 @@ select { padding-right: 22px; }
 .gate-bar span { display: block; height: 100%; background: linear-gradient(90deg,#5c93c6,#2f6da8); }
 .gate-counts { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 12px; }
 
+.trend-bars { display: flex; align-items: stretch; gap: 3px; height: 64px; padding-top: 8px; }
+.trend-bar { flex: 1 1 0; max-width: 42px; min-width: 4px; border-radius: 3px 3px 0 0; background: #9aa6b2; opacity: .88; }
+.trend-bar:hover { opacity: 1; transform: translateY(-1px); }
+.trend-bar.trend-passed { background: var(--ok); }
+.trend-bar.trend-failed { background: var(--danger); }
+.trend-bar.trend-blocked { background: var(--warn); }
+.trend-bar.trend-not_run { background: #9aa6b2; }
+.trend-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 12px; }
+.trend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; background: #9aa6b2; }
+.trend-dot.trend-passed { background: var(--ok); }
+.trend-dot.trend-failed { background: var(--danger); }
+.trend-dot.trend-blocked { background: var(--warn); }
+.trend-dot.trend-not_run { background: #9aa6b2; }
+
 .finding-sev { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .finding-sev.critical { color: var(--danger); }
 .finding-sev.high { color: #8a4e14; }

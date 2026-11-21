@@ -132,6 +132,28 @@
       </div>
     </section>
 
+    <section class="card">
+      <div class="card-head"><h2>Run trend</h2><span class="hint">latest 12, oldest left</span></div>
+      <div class="card-body">
+        {% if trend %}
+        <div class="trend-bars" aria-label="Recent run statuses">
+          {% for bar in trend %}
+          <a class="trend-bar trend-{{ bar.status }}" href="/runs/{{ bar.id }}"
+             title="{{ bar.case_id }} · {{ bar.started_at }} · {{ bar.status }}"></a>
+          {% endfor %}
+        </div>
+        <div class="trend-legend">
+          <span><i class="trend-dot trend-passed"></i> passed</span>
+          <span><i class="trend-dot trend-failed"></i> failed</span>
+          <span><i class="trend-dot trend-blocked"></i> blocked</span>
+          <span><i class="trend-dot trend-not_run"></i> not run</span>
+        </div>
+        {% else %}
+        <p class="small muted">No runs yet. Start from a case to build the trend.</p>
+        {% endif %}
+      </div>
+    </section>
+
     {% if next_action %}
     <section class="card">
       <div class="card-head"><h2>Next quality action</h2></div>

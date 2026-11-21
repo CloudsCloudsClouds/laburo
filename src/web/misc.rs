@@ -86,6 +86,18 @@ pub async fn dashboard(
     let active_tags: Vec<_> = tags.iter().filter(|tag| tag.count > 0).take(14).collect();
     let cases = repo::list_cases(&conn, None, None)?;
     let latest = data::latest_runs(&conn)?;
+    let trend: Vec<_> = repo::list_runs(&conn, None, 12)?
+        .into_iter()
+        .rev()
+        .map(|run| {
+            json!({
+                "id": run.id,
+                "case_id": run.case_id,
+                "status": run.status.as_str(),
+                "started_at": run.started_at,
+            })
+        })
+        .collect();
     let flash = flash_param(params.flash.as_deref());
     render(
         &state,
@@ -105,6 +117,7 @@ pub async fn dashboard(
             "tags": active_tags,
             "cases": cases,
             "latest": latest,
+            "trend": trend,
         }),
     )
 }
