@@ -425,6 +425,8 @@ No blocking questions. Run `/goal` against this file.
 - [x] Web auto-reopens SQLite after `.laburo` reseed.
 - [x] P1: README screenshot gallery in `docs/screenshots/`.
 - [x] P1: dashboard run trend (last 12 runs, CSS/SVG-free, no JS chart).
+- [x] P1: `scripts/verify-demo.sh` checks the seeded DB, PDFs, `.eml`, MCP
+      check-in, and web UI with one command.
 - [ ] **Author:** record the 15-minute video from `DEMO.md`.
 - [ ] **Author:** create/push the public repo and add the link.
 

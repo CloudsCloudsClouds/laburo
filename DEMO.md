@@ -9,6 +9,7 @@ cd laburo
 cargo install --path . --locked
 ./scripts/demo-seed.sh          # resets only <project>/.laburo
 laburo web --port 3000
+./scripts/verify-demo.sh        # checks DB, PDFs, .eml, MCP, web
 ```
 
 Open <http://127.0.0.1:3000>. The demo project is

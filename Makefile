@@ -1,4 +1,4 @@
-.PHONY: build test test-fast fmt lint install doctor e2e check clean
+.PHONY: build test test-fast fmt lint install doctor e2e verify-demo check clean
 
 build:
 	cargo build
@@ -26,6 +26,9 @@ doctor:
 
 e2e:
 	cargo test --test e2e_fixture -- --nocapture
+
+verify-demo:
+	./scripts/verify-demo.sh
 
 clean:
 	cargo clean

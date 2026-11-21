@@ -50,8 +50,9 @@ Real seeded flows:
 
 - Record the 15-minute video using `DEMO.md`.
 - Create/push the public repo remote (repo is publishable; no secrets).
-- P1 shipped: README screenshot gallery (`docs/screenshots/`) and the dashboard
-  run trend (last 12 runs, no JS/external chart).
+- P1 shipped: README screenshot gallery (`docs/screenshots/`), the dashboard
+  run trend (last 12 runs, no JS/external chart), and
+  `scripts/verify-demo.sh` (DB, PDFs, `.eml`, MCP, web).
 - Optional P1 left: TUI rework, SMTP transport, GIF, ngrok share token.
 - P2: Cucumber/Selenium, real nextest driver, Robot Framework.
 

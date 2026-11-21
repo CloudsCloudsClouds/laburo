@@ -81,6 +81,7 @@ remembers the quality truth. No model call is required for the gate.
 make test                    # cargo test --all-targets
 make test-fast               # cargo nextest run --all-targets
 make e2e                     # fixture flow: driver + four PDFs + MCP
+make verify-demo             # check the seeded demo (DB, PDFs, .eml, MCP, web)
 scripts/pod.sh tui check     # per-pod target dir + sccache, for parallel agents
 ```
 
