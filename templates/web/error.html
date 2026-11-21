@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Error{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Something went wrong</h1>
+    <p class="lede">The local server could not complete that request.</p>
+  </div>
+</div>
+<section class="card">
+  <div class="card-body">
+    <p class="error-detail">{{ message | default("Unexpected error.") }}</p>
+    <p style="margin-top: 12px;"><a class="btn" href="/">Back to dashboard</a> <a class="btn" href="/quality">Quality</a></p>
+  </div>
+</section>
+{% endblock %}

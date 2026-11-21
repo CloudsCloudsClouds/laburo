@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Search</h1>
+    <p class="lede">One query across cases, runs and bugs. Case search covers ID, title, module and step text.</p>
+  </div>
+</div>
+
+<form class="filterbar" method="get" action="/search" style="border-radius: 6px; border-bottom: 1px solid var(--line); margin-bottom: 16px;">
+  <div class="field grow">
+    <label for="search">Search the quality memory</label>
+    <input id="search" type="search" name="q" value="{{ query }}" placeholder="TC-001, booking, RUN-…, BUG-…" autocomplete="off" autofocus>
+  </div>
+  <button class="btn btn-primary" type="submit">Search</button>
+</form>
+
+{% if not has_query %}
+<section class="card">
+  <div class="card-body">
+    <div class="empty">
+      <h3>Type a case, run, bug or feature</h3>
+      <p>Examples: <span class="mono">smoke</span>, <span class="mono">TC-M01</span>, <span class="mono">booking</span>, <span class="mono">RUN-2026</span>.</p>
+      <a class="btn" href="/cases">Browse cases</a>
+      <a class="btn" href="/runs">Browse runs</a>
+      <a class="btn" href="/bugs">Browse bugs</a>
+    </div>
+  </div>
+</section>
+{% elif empty %}
+<section class="card">
+  <div class="card-body">
+    <div class="empty">
+      <h3>No matches for “{{ query }}”</h3>
+      <p>Try a shorter term, a case ID, or clear the query and browse the catalogue.</p>
+      <a class="btn" href="/cases">Browse all cases</a>
+      <a class="btn" href="/search">Clear search</a>
+    </div>
+  </div>
+</section>
+{% else %}
+<p class="filter-summary" style="padding: 0 0 12px;">
+  {{ case_total }} case(s) · {{ run_total }} run(s) · {{ bug_total }} bug(s) for “{{ query }}”.
+</p>
+
+<div class="stack">
+  <section class="card">
+    <div class="card-head"><h2>Cases</h2><span class="hint">{{ case_total }} match(es)</span></div>
+    {% if cases %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>ID</th><th>Title</th><th>Tags</th><th>Priority</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for case in cases %}
+          <tr>
+            <td class="nowrap"><a class="mono" href="/cases/{{ case.id }}">{{ case.id }}</a></td>
+            <td><a href="/cases/{{ case.id }}">{{ case.title }}</a>{% if case.module %}<div class="small muted">{{ case.module }}</div>{% endif %}</td>
+            <td>{% for tag in case.tags %}<span class="tag">{{ tag }}</span> {% endfor %}</td>
+            <td><span class="badge badge-{{ case.priority }}">{{ case.priority }}</span></td>
+            <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body"><p class="small muted">No cases match. <a href="/cases">Browse the catalogue</a>.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Runs</h2><span class="hint">{{ run_total }} match(es)</span></div>
+    {% if runs %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Run</th><th>Case</th><th>Mode</th><th>Status</th><th>Started</th></tr></thead>
+        <tbody>
+          {% for run in runs %}
+          <tr>
+            <td class="nowrap"><a class="mono" href="/runs/{{ run.id }}">{{ run.id }}</a></td>
+            <td><a href="/cases/{{ run.case_id }}">{{ run.case_id }}</a></td>
+            <td><span class="badge badge-{{ run.mode }}">{{ run.mode }}</span></td>
+            <td><span class="badge badge-{{ run.status }}">{{ run.status | replace("_", " ") }}</span></td>
+            <td class="muted nowrap">{{ run.started_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body"><p class="small muted">No runs match. <a href="/runs">Browse runs</a>.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Bugs</h2><span class="hint">{{ bug_total }} match(es)</span></div>
+    {% if bugs %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Case</th></tr></thead>
+        <tbody>
+          {% for bug in bugs %}
+          <tr>
+            <td class="nowrap"><a class="mono" href="/bugs/{{ bug.id }}">{{ bug.id }}</a></td>
+            <td><a href="/bugs/{{ bug.id }}">{{ bug.title }}</a></td>
+            <td><span class="badge badge-sev-{{ bug.severity }}">sev {{ bug.severity }}</span></td>
+            <td><span class="badge badge-{{ bug.status }}">{{ bug.status }}</span></td>
+            <td>{% if bug.case_id %}<a href="/cases/{{ bug.case_id }}">{{ bug.case_id }}</a>{% else %}<span class="small muted">none</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body"><p class="small muted">No bugs match. <a href="/bugs">Browse bugs</a>.</p></div>
+    {% endif %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

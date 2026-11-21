@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block title %}{{ run.id }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/runs">Runs</a><span>/</span>{{ run.id }}</div>
+    <h1>Run sheet</h1>
+    <div class="meta-row">
+      <span class="id-chip">{{ run.id }} <button type="button" class="copy-btn" data-copy="{{ run.id }}" title="Copy run ID">⧉</button></span>
+      <span class="badge badge-{{ run.status }}">{{ run.status | replace("_", " ") }}</span>
+      <span class="badge badge-{{ run.mode }}">{{ run.mode }}</span>
+      <span class="sep">·</span><a href="/cases/{{ run.case_id }}">{{ run.case_id }}</a>
+      <span class="sep">·</span><span>{{ run.environment }}</span>
+      <span class="sep">·</span><span>{{ passed }} passed</span>
+      {% if failed > 0 %}<span class="sep">·</span><span style="color: var(--danger);">{{ failed }} failed/blocked</span>{% endif %}
+    </div>
+  </div>
+  <div class="head-actions">
+    {% if not finished %}
+    <form class="inline-form" method="post" action="/runs/{{ run.id }}/finish">
+      <button class="btn btn-primary" type="submit">Finish run</button>
+    </form>
+    {% else %}
+    <span class="badge badge-{{ run.status }}">finished</span>
+    {% endif %}
+    <form class="inline-form" method="post" action="/reports/run/{{ run.id }}">
+      <button class="btn" type="submit">Run PDF</button>
+    </form>
+    {% if case %}<a class="btn" href="/cases/{{ run.case_id }}">Case</a>{% endif %}
+  </div>
+</div>
+
+<div class="detail-grid">
+  <div class="stack">
+    <section class="card">
+      <div class="card-head">
+        <h2>Steps</h2>
+        <span class="hint">Record pass/fail/blocked/error, observed behaviour, notes and evidence</span>
+      </div>
+      {% if steps %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width: 34px;">#</th>
+              <th>Execution</th>
+              <th>Action / expected</th>
+              <th>Observed</th>
+              <th>Evidence</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for step in steps %}
+            <tr id="step-{{ step.position }}">
+              <td class="num">{{ step.position }}</td>
+              <td class="nowrap">
+                <span class="badge badge-{{ step.status }}">{{ step.status | replace("_", " ") }}</span>
+                <div class="tiny muted">{{ step.step_kind }}</div>
+                {% if step.driver_test %}<div class="tiny mono">{{ step.driver_test }}</div>{% endif %}
+              </td>
+              <td>
+                <div class="step-action">{{ step.action }}</div>
+                {% if step.data %}<div class="step-data">{{ step.data }}</div>{% endif %}
+                {% if step.expected %}<div class="step-expected"><strong>Expected:</strong> {{ step.expected }}</div>{% endif %}
+              </td>
+              <td>
+                {% if step.observed %}<div>{{ step.observed }}</div>{% else %}<span class="small muted">not recorded</span>{% endif %}
+                {% if step.notes %}<div class="small muted">{{ step.notes }}</div>{% endif %}
+                {% if step.raw_output %}<details><summary class="small">raw output</summary><pre class="gherkin" style="margin-top: 4px;">{{ step.raw_output }}</pre></details>{% endif %}
+              </td>
+              <td>
+                {% if step.evidence_items %}
+                <div class="thumb-row">
+                  {% for item in step.evidence_items %}
+                    {% if item.is_image %}
+                    <a href="{{ item.url }}" target="_blank" rel="noopener" title="{{ item.caption }}"><img class="thumb" src="{{ item.url }}" alt="{{ item.caption }}" loading="lazy"></a>
+                    {% else %}
+                    <a class="file-pill" href="{{ item.url }}" target="_blank" rel="noopener">{{ item.kind }}</a>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+                {% else %}
+                <span class="small muted">none</span>
+                {% endif %}
+                {% if step.bugs %}
+                <div class="tiny" style="margin-top: 4px;">bug:
+                  {% for bug_id in step.bugs %}<a href="/bugs/{{ bug_id }}">{{ bug_id }}</a>{% endfor %}
+                </div>
+                {% endif %}
+              </td>
+              <td class="actions">
+                {% if step.status == 'failed' or step.status == 'error' or step.status == 'blocked' %}
+                <a class="btn btn-sm" href="/bugs/new?case_id={{ run.case_id }}&run_id={{ run.id }}&step={{ step.position }}">File bug</a>
+                {% endif %}
+              </td>
+            </tr>
+            <tr class="step-details">
+              <td colspan="6">
+                <details {% if step.status == 'not_run' or step.status == 'running' %}open{% endif %}>
+                  <summary>Record step {{ step.position }}</summary>
+                  <form class="step-form" method="post" action="/runs/{{ run.id }}/steps/{{ step.position }}" data-dirty>
+                    <div class="form-row">
+                      <div class="field">
+                        <label for="status-{{ step.position }}">Status</label>
+                        <select id="status-{{ step.position }}" name="status">
+                          {% for status in ['passed', 'failed', 'blocked', 'error', 'not_run'] %}
+                          <option value="{{ status }}" {% if step.status == status %}selected{% endif %}>{{ status | replace("_", " ") }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="observed-{{ step.position }}">Observed</label>
+                        <input id="observed-{{ step.position }}" name="observed" value="{{ step.observed }}" placeholder="What actually happened">
+                      </div>
+                      <div class="field">
+                        <label for="notes-{{ step.position }}">Notes</label>
+                        <input id="notes-{{ step.position }}" name="notes" value="{{ step.notes }}" placeholder="optional">
+                      </div>
+                      <div class="field">
+                        <label for="duration-{{ step.position }}">Duration (ms)</label>
+                        <input id="duration-{{ step.position }}" name="duration_ms" type="number" min="0" value="{% if step.duration_ms %}{{ step.duration_ms }}{% endif %}">
+                      </div>
+                      <div class="field">
+                        <label for="driver-{{ step.position }}">Driver test</label>
+                        <input id="driver-{{ step.position }}" name="driver_test" value="{% if step.driver_test %}{{ step.driver_test }}{% endif %}" class="mono" list="driver-test-list">
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label for="raw-{{ step.position }}">Raw output</label>
+                      <textarea id="raw-{{ step.position }}" name="raw_output" class="mono" style="min-height: 54px;" placeholder="Paste runner output or attach a log.">{{ step.raw_output }}</textarea>
+                    </div>
+                    <button class="btn btn-sm btn-primary" type="submit">Record step</button>
+                  </form>
+                  <form method="post" action="/runs/{{ run.id }}/steps/{{ step.position }}/evidence" enctype="multipart/form-data" style="margin-top: 10px; border-top: 1px dashed var(--line-soft); padding-top: 10px;">
+                    <div class="upload">
+                      <div class="field">
+                        <label for="step-file-{{ step.position }}">Step evidence</label>
+                        <input id="step-file-{{ step.position }}" type="file" name="file" required>
+                      </div>
+                      <div class="field">
+                        <label for="step-caption-{{ step.position }}">Caption</label>
+                        <input id="step-caption-{{ step.position }}" name="caption" placeholder="Screenshot / log for this step">
+                      </div>
+                      <div class="field">
+                        <label for="step-role-{{ step.position }}">Role</label>
+                        <select id="step-role-{{ step.position }}" name="role">
+                          <option value="actual" selected>actual</option>
+                          <option value="artifact">artifact</option>
+                          <option value="evidence">evidence</option>
+                        </select>
+                      </div>
+                    </div>
+                    <button class="btn btn-sm" type="submit" style="margin-top: 6px;">Attach step evidence</button>
+                  </form>
+                </details>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body">
+        <div class="empty">
+          <h3>No steps in this run</h3>
+          <p>The case had no steps when the run started. Add steps to the case, then start a fresh run.</p>
+          <a class="btn" href="/cases/{{ run.case_id }}/edit">Edit case</a>
+        </div>
+      </div>
+      {% endif %}
+      <div class="card-foot">
+        {% if not finished %}Finish the run to derive the run status from its steps.{% else %}Run finished — step records remain editable for corrections.{% endif %}
+      </div>
+    </section>
+
+    <section class="card" id="evidence">
+      <div class="card-head"><h2>Run evidence</h2><span class="hint">actual · artifact · evidence</span></div>
+      <div class="card-body">
+        {% if evidence %}
+        <div class="evidence-grid">
+          {% for item in evidence %}
+          <div class="evidence-item">
+            {% if item.is_image %}
+            <a href="{{ item.url }}" target="_blank" rel="noopener"><img src="{{ item.url }}" alt="{{ item.caption }}" loading="lazy"></a>
+            {% else %}
+            <div class="file" style="padding: 18px 10px; text-align: center;"><span class="file-pill">{{ item.kind }}</span></div>
+            {% endif %}
+            <div class="meta">
+              <strong>{{ item.original_name }}</strong>
+              {{ item.caption }}<br>
+              <a href="{{ item.url }}" target="_blank" rel="noopener">open</a>
+              <span class="sep">·</span>{{ item.role }}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted small">No run-level evidence. Step evidence stays attached to its step.</p>
+        {% endif %}
+        <form method="post" action="/runs/{{ run.id }}/evidence" enctype="multipart/form-data" style="margin-top: 12px;">
+          <div class="upload">
+            <div class="field">
+              <label for="run-file">File</label>
+              <input id="run-file" type="file" name="file" required>
+            </div>
+            <div class="field">
+              <label for="run-caption">Caption</label>
+              <input id="run-caption" name="caption" placeholder="Console log, screenshot…">
+            </div>
+            <div class="field">
+              <label for="run-role">Role</label>
+              <select id="run-role" name="role">
+                <option value="actual" selected>actual</option>
+                <option value="artifact">artifact</option>
+                <option value="evidence">evidence</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-sm" type="submit" style="margin-top: 8px;">Upload evidence</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <div class="card-head"><h2>Run details</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Started</dt><dd>{{ run.started_at }}</dd>
+          <dt>Ended</dt><dd>{% if run.ended_at %}{{ run.ended_at }}{% else %}<span class="muted">still running</span>{% endif %}</dd>
+          <dt>Mode</dt><dd>{{ run.mode }}</dd>
+          <dt>Environment</dt><dd>{{ run.environment }}</dd>
+          <dt>Commit</dt><dd>{% if run.commit_ref %}<span class="mono">{{ run.commit_ref }}</span>{% else %}<span class="muted">—</span>{% endif %}</dd>
+          <dt>Command</dt><dd>{% if run.command %}<span class="mono small">{{ run.command }}</span>{% else %}<span class="muted">—</span>{% endif %}</dd>
+          <dt>Notes</dt><dd>{% if run.notes %}{{ run.notes }}{% else %}<span class="muted">—</span>{% endif %}</dd>
+        </dl>
+      </div>
+    </section>
+
+    {% if case %}
+    <section class="card">
+      <div class="card-head"><h2>Case under test</h2></div>
+      <div class="card-body">
+        <a href="/cases/{{ case.id }}" style="font-weight: 600;">{{ case.title }}</a>
+        <div class="small muted" style="margin-top: 3px;">{{ case.id }} · {{ case.module }}</div>
+        <div class="chip-row" style="margin-top: 8px;">
+          {% for tag in case.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <div class="card-head"><h2>Bugs from this run</h2><a class="hint" href="/bugs/new?case_id={{ run.case_id }}&run_id={{ run.id }}">File →</a></div>
+      {% if bugs %}
+      <ul class="list-clean" style="padding: 4px 14px 10px;">
+        {% for bug in bugs %}
+        <li>
+          <span class="badge badge-{{ bug.status }}">{{ bug.status }}</span>
+          <span class="grow"><a href="/bugs/{{ bug.id }}">{{ bug.title }}</a>
+            <span class="small muted" style="display:block;">{{ bug.id }} · sev {{ bug.severity }}</span></span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="card-body"><p class="small muted">No bugs recorded for this run.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Linked items</h2></div>
+      <div class="card-body">
+        {% if links %}
+        {% for link in links %}
+        <div class="link-item">
+          <span class="link-rel">{{ link.relation }}</span>
+          <span class="grow">
+            {% if link.source_kind == 'run' and link.source_id == run.id %}
+              → {% if link.target_kind == 'requirement' %}<span>requirement {{ link.target_id }}</span>{% else %}<a href="/{{ link.target_kind }}s/{{ link.target_id }}">{{ link.target_kind }} {{ link.target_id }}</a>{% endif %}
+            {% else %}
+              ← {% if link.source_kind == 'requirement' %}<span>requirement {{ link.source_id }}</span>{% else %}<a href="/{{ link.source_kind }}s/{{ link.source_id }}">{{ link.source_kind }} {{ link.source_id }}</a>{% endif %}
+            {% endif %}
+            {% if link.note %}<span class="small muted" style="display:block;">{{ link.note }}</span>{% endif %}
+          </span>
+          <form method="post" action="/links/{{ link.id }}/delete" data-confirm="Remove this link?">
+            <input type="hidden" name="return_to" value="/runs/{{ run.id }}">
+            <button class="copy-btn" type="submit" title="Remove link">×</button>
+          </form>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="small muted">No links.</p>
+        {% endif %}
+        <form method="post" action="/links" style="margin-top: 12px;">
+          <input type="hidden" name="source_kind" value="run">
+          <input type="hidden" name="source_id" value="{{ run.id }}">
+          <input type="hidden" name="return_to" value="/runs/{{ run.id }}">
+          <div class="field">
+            <label for="link-kind">Target kind</label>
+            <select id="link-kind" name="target_kind" data-link-kind="link-target">
+              <option value="case">case</option>
+              <option value="bug">bug</option>
+              <option value="run">run</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="link-target">Target ID</label>
+            <input id="link-target" name="target_id" class="mono" required>
+          </div>
+          <div class="field">
+            <label for="link-relation">Relation</label>
+            <select id="link-relation" name="relation">
+              <option value="found-in">found-in</option>
+              <option value="evidence-for">evidence-for</option>
+              <option value="related">related</option>
+            </select>
+          </div>
+          <button class="btn btn-sm" type="submit">Add link</button>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

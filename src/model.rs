@@ -139,6 +139,9 @@ pub struct TestCase {
     pub gherkin: String,
     pub created_at: String,
     pub updated_at: String,
+    /// Case-level driver target used by `single` mode.
+    pub driver_target: Option<String>,
+    pub default_mode: RunMode,
     pub tags: Vec<String>,
     pub steps: Vec<TestStep>,
 }
@@ -157,6 +160,9 @@ pub struct Attachment {
     pub step_run_id: Option<i64>,
     pub run_id: Option<String>,
     pub bug_id: Option<String>,
+    pub case_id: Option<String>,
+    /// expected | actual | artifact | evidence
+    pub role: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -229,6 +235,45 @@ pub struct TestOutcome {
     pub backtrace: String,
     pub raw_output: String,
     pub evidence: Vec<String>,
+}
+
+/// A generic edge between two entities (case, run, bug, requirement, step, ...).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntityLink {
+    pub id: i64,
+    pub source_kind: String,
+    pub source_id: String,
+    pub target_kind: String,
+    pub target_id: String,
+    /// reproduces | found-in | covers | related | evidence-for
+    pub relation: String,
+    pub note: String,
+    pub created_at: String,
+}
+
+/// One row in the local outbox / transport log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmailLog {
+    pub id: i64,
+    pub created_at: String,
+    pub to_addr: String,
+    pub subject: String,
+    pub report_path: String,
+    pub status: String,
+    pub transport: String,
+    pub file_path: String,
+    pub error: String,
+}
+
+/// Case list filters. Empty options mean "no filter".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaseFilter {
+    pub q: Option<String>,
+    pub tag: Option<String>,
+    /// Tag category: level, type, technique, quality.
+    pub category: Option<String>,
+    pub priority: Option<String>,
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

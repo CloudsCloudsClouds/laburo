@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Reports</h1>
+    <p class="lede">Class-format Typst reports generated from SQLite: dictionary, case dossier, run/execution sheet and bug report. History stays under <span class="mono">.laburo/reports</span>.</p>
+  </div>
+  <div class="head-actions">
+    <form class="inline-form" method="post" action="/reports/dictionary/all">
+      <button class="btn btn-primary" type="submit">Generate dictionary</button>
+    </form>
+  </div>
+</div>
+
+<section class="card" style="margin-bottom: 16px;">
+  <div class="card-head"><h2>Generate a report</h2><span class="hint">Typst must be installed; set LABURO_TYPST if needed</span></div>
+  <div class="card-body">
+    <form id="report-form" method="post" action="/reports/dictionary/all">
+      <div class="form-grid">
+        <div class="field">
+          <label for="report-kind">Kind</label>
+          <select id="report-kind" name="kind">
+            <option value="dictionary">dictionary — all cases</option>
+            <option value="case">case — one case dossier</option>
+            <option value="run">run — one execution sheet</option>
+            <option value="bug">bug — one bug report</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="report-id">Target ID</label>
+          <input id="report-id" name="id" class="mono" list="report-targets" placeholder="TC-001 · RUN-… · BUG-… (blank = all for dictionary)">
+          <span class="help">The ID is part of the report route; blank means “all” for the dictionary.</span>
+        </div>
+      </div>
+      <datalist id="report-targets">
+        {% for report in reports %}<option value="{{ report.id }}">{{ report.kind }}</option>{% endfor %}
+      </datalist>
+      <button class="btn btn-primary" type="submit">Generate report</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Report history</h2><span class="hint">{{ reports_dir }}</span></div>
+  {% if reports %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Kind</th>
+          <th>Target</th>
+          <th>Generated</th>
+          <th>Size</th>
+          <th>Files</th>
+          <th class="actions">Open</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+        <tr>
+          <td><span class="badge badge-{{ report.kind }}">{{ report.kind }}</span></td>
+          <td class="nowrap">
+            {% if report.kind == 'case' %}<a class="mono" href="/cases/{{ report.id }}">{{ report.id }}</a>
+            {% elif report.kind == 'run' %}<a class="mono" href="/runs/{{ report.id }}">{{ report.id }}</a>
+            {% elif report.kind == 'bug' %}<a class="mono" href="/bugs/{{ report.id }}">{{ report.id }}</a>
+            {% else %}<span class="mono">{{ report.id }}</span>{% endif %}
+          </td>
+          <td class="muted nowrap">{{ report.created }}</td>
+          <td class="num nowrap">{{ report.size }} B</td>
+          <td class="nowrap">
+            <span class="file-pill" title="Typst projection">data.json</span>
+            <span class="file-pill" title="Typst source">{{ report.kind }}.typ</span>
+          </td>
+          <td class="actions">
+            <a class="btn btn-sm btn-primary" href="{{ report.url }}" target="_blank" rel="noopener">PDF</a>
+            <a class="btn btn-sm" href="/files/reports/{{ report.dir }}/data.json" target="_blank" rel="noopener">JS</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-foot">{{ reports | length }} report(s) in history. Download links are served from <span class="mono">/files</span>.</div>
+  {% else %}
+  <div class="card-body">
+    <div class="empty">
+      <h3>No reports generated yet</h3>
+      <p>Generate a dictionary from the button above, or open a case/run/bug and press its PDF button.</p>
+      <form class="inline-form" method="post" action="/reports/dictionary/all" style="justify-content:center;">
+        <button class="btn btn-primary" type="submit">Generate dictionary</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Drivers{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Drivers</h1>
+    <p class="lede">{{ total }} discovered test(s). Discovery reads <span class="mono">test/**/*_test.rb</span> without loading Ruby; the automation picker uses these targets.</p>
+  </div>
+  <div class="head-actions">
+    <form class="inline-form" method="post" action="/drivers/discover">
+      <button class="btn btn-primary" type="submit">Discover tests</button>
+    </form>
+  </div>
+</div>
+
+<section class="card" style="margin-bottom: 16px;">
+  <div class="card-body" style="display:flex; gap: 18px; align-items:center; flex-wrap:wrap;">
+    <div>
+      <div class="section-label" style="margin-top:0;">Project root</div>
+      <span class="mono small">{{ project_root }}</span>
+    </div>
+    <div>
+      <div class="section-label" style="margin-top:0;">Drivers</div>
+      <div class="chip-row">
+        {% if by_driver %}
+          {% for driver in by_driver %}<span class="chip">{{ driver.name }} <span class="chip-count">{{ driver.count }}</span></span>{% endfor %}
+        {% else %}
+          <span class="small muted">none discovered yet</span>
+        {% endif %}
+      </div>
+    </div>
+    <div style="margin-left:auto;">
+      <a class="btn" href="/cases">Choose a case</a>
+      <a class="btn" href="/cases/new">New case</a>
+    </div>
+  </div>
+</section>
+
+<form class="filterbar" method="get" action="/drivers">
+  <div class="field grow">
+    <label for="search">Search discovered tests</label>
+    <input id="search" type="search" name="q" value="{% if filters.q %}{{ filters.q }}{% endif %}" placeholder="class, method, file…" autocomplete="off">
+  </div>
+  <button class="btn" type="submit">Filter</button>
+  {% if filters.q %}<a class="btn btn-ghost" href="/drivers">Clear</a>{% endif %}
+</form>
+
+<section class="card" style="border-radius: 0 0 6px 6px; border-top: 0;">
+  {% if tests %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Test</th>
+          <th>Target ID</th>
+          <th>File</th>
+          <th>Driver</th>
+          <th>Kind</th>
+          <th class="actions">Use</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for test in tests %}
+        <tr>
+          <td>
+            <span style="font-weight: 600;">{{ test.name }}</span>
+            {% if test.metadata.description %}<div class="small muted">{{ test.metadata.description }}</div>{% endif %}
+          </td>
+          <td class="nowrap">
+            <span class="mono small">{{ test.id }}</span>
+            <button type="button" class="copy-btn" data-copy="{{ test.id }}" title="Copy discovered target">⧉</button>
+          </td>
+          <td class="mono small muted">{{ test.file }}{% if test.line %}:{{ test.line }}{% endif %}</td>
+          <td><span class="badge">{{ test.driver_id }}</span></td>
+          <td class="nowrap">
+            {% if test.metadata.system %}<span class="badge badge-single">system</span>{% else %}<span class="badge badge-manual">{{ test.metadata.kind | default("test") }}</span>{% endif %}
+          </td>
+          <td class="actions">
+            <a class="btn btn-sm" href="/cases">Attach</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-foot">{{ shown }} of {{ total }} test(s). Copy a target, then paste it into a case’s Automation block or a step’s driver target.</div>
+  {% else %}
+  <div class="card-body">
+    <div class="empty">
+      <h3>No discovered tests</h3>
+      <p>Run discovery against this project’s Rails test directory. Nothing is executed and no network is used.</p>
+      <form class="inline-form" method="post" action="/drivers/discover" style="justify-content:center;">
+        <button class="btn btn-primary" type="submit">Discover tests</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

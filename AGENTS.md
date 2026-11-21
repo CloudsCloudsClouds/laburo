@@ -4,19 +4,20 @@ This file is for any agent working in `laburo/`. Read it before touching code.
 
 ## Read first
 
-1. `GOAL.md` — the objective and acceptance criteria.
-2. `README.md`
-3. `docs/README.md`
-4. `docs/use-cases.md`
-5. `docs/architecture.md`
-6. `docs/data-model.md`
-7. `docs/execution-model.md`
-8. `docs/drivers.md`
-9. `docs/reports.md`
-10. `docs/tui.md`
-11. `docs/ai.md`
-12. `docs/mcp.md`
-13. `docs/status.md` — the live board.
+1. `GOAL-v0.2.md` — the current objective and acceptance criteria.
+2. `docs/v0.2-contracts.md` — the frozen v0.2 schema, routes, and pod contracts.
+3. `README.md`
+4. `docs/README.md`
+5. `docs/use-cases.md`
+6. `docs/architecture.md`
+7. `docs/data-model.md`
+8. `docs/execution-model.md`
+9. `docs/drivers.md`
+10. `docs/reports.md`
+11. `docs/tui.md`
+12. `docs/ai.md`
+13. `docs/mcp.md`
+14. `docs/status.md` — the live board.
 
 The thesis-level contract still applies only where relevant: `../MODELS.md` and
 `../ElizToursWiki/Operandi.md`. Laburo is its own repo; the thesis root stays
@@ -84,6 +85,14 @@ Every task states:
 - Fixtures used.
 - Docs to update.
 - Handoff note: changed, verified, unverified, next, do-not-touch.
+
+## Laburo quality contract (for coding swarms)
+
+Before and after a change, call `laburo_check_in` over MCP with the feature,
+case, or tag. It returns relevant cases, mapped/unmapped coverage, last results,
+evidence gaps, open bugs, next actions, and a `pass`/`warn`/`fail` verdict. Run
+the mapped cases, record evidence, file a bug on failure, and re-check. The AI
+orchestrates; Laburo is the quality memory. No model call is required.
 
 ## Definition of done
 

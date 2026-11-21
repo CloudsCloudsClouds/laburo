@@ -7,8 +7,9 @@ records evidence, files bug reports, exports the class-format Typst PDFs, and
 exposes an MCP server so an agent can operate it end to end. The TUI is the main
 interface; the CLI is the core and the CI/MCP surface.
 
-> **Status: v0.1 in progress.** The contracts are frozen in `docs/`; the swarm
-> builds against them. See [`GOAL.md`](GOAL.md) and
+> **Status: v0.2 (Demo Edition) in progress.** The v0.1 core is installed; the
+> v0.2 wave adds the web UI, evidence graph, class-format reports, `.eml` email,
+> and the MCP quality gate. See [`GOAL-v0.2.md`](GOAL-v0.2.md) and
 > [`docs/status.md`](docs/status.md).
 
 ## Install
@@ -23,14 +24,28 @@ laburo doctor
 
 ```bash
 make install                 # cargo install --path . --locked
-laburo init --project ../src-elizabeth-tours
-laburo case create --id TC-001 --title "Booking happy path" --tag integration
-laburo run manual TC-001
-laburo bug create --case TC-001 --title "Booking fails" --severity 1
+./scripts/demo-seed.sh       # reset/seed src-elizabeth-tours/.laburo
+laburo web --port 3000       # the demo centerpiece
+laburo case list --tag smoke
+laburo run batch --tag smoke --mode auto
 laburo report dictionary
-laburo tui
-laburo mcp
+laburo email send --to demo@example.com --subject "TQA report" --report <pdf>
+laburo mcp                   # agent surface
 ```
+
+## MCP quality contract (for coding swarms)
+
+A coding agent should check in with Laburo before and after a change:
+
+1. `laburo_check_in` with a feature, case, or tag: relevant cases, mapped/
+   unmapped coverage, last results, evidence gaps, open bugs, next actions, and
+   `pass`/`warn`/`fail`.
+2. Run the mapped cases; record evidence/artifacts.
+3. File a bug on failure, linked to the reproducing case and run.
+4. Re-run the check-in until it is `pass` or the remaining warnings are known.
+
+The AI orchestrates; Laburo remembers the quality truth. No model call is
+required for the gate.
 
 For development:
 

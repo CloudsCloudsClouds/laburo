@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Cases{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Cases</h1>
+    <p class="lede">{{ total }} case(s) · {{ automated }} automated · {{ manual }} manual-required.
+      Search covers ID, title, module and step text.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="/cases/export{{ query_string }}" title="Download the filtered set as CSV">Export CSV</a>
+    <a class="btn btn-primary" href="/cases/new">New case</a>
+  </div>
+</div>
+
+<form class="filterbar" method="get" action="/cases">
+  <div class="field grow">
+    <label for="search">Search</label>
+    <input id="search" type="search" name="q" value="{% if filters.q %}{{ filters.q }}{% endif %}"
+           placeholder="ID, title, module, step text…" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="filter-tag">Tag</label>
+    <select id="filter-tag" name="tag" data-autosubmit>
+      <option value="">Any tag</option>
+      {% for tag in tags %}
+        {% if tag.count > 0 %}
+        <option value="{{ tag.name }}" {% if filters.tag == tag.name %}selected{% endif %}>{{ tag.name }} ({{ tag.count }})</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="filter-category">Category</label>
+    <select id="filter-category" name="category" data-autosubmit>
+      <option value="">Any category</option>
+      {% for category in ['level', 'type', 'technique', 'quality', 'custom'] %}
+      <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="filter-priority">Priority</label>
+    <select id="filter-priority" name="priority" data-autosubmit>
+      <option value="">Any</option>
+      {% for priority in ['critical', 'high', 'medium', 'low'] %}
+      <option value="{{ priority }}" {% if filters.priority == priority %}selected{% endif %}>{{ priority }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="filter-status">Status</label>
+    <select id="filter-status" name="status" data-autosubmit>
+      <option value="">Any</option>
+      {% for status in ['draft', 'active', 'archived'] %}
+      <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Apply</button>
+  {% if filters_active %}<a class="btn btn-ghost" href="/cases">Clear</a>{% endif %}
+</form>
+
+{% if tag_groups %}
+<div class="card" style="border-radius: 0; border-top: 0; box-shadow: none;">
+  <div class="card-body" style="padding: 12px 14px;">
+    {% for group in tag_groups %}
+    <div class="tag-group">
+      <div class="tag-label">{{ group.name }}</div>
+      <div class="chip-row">
+        {% for tag in group.tags %}
+        <a class="chip {% if filters.tag == tag.name %}active{% endif %}"
+           href="/cases?tag={{ tag.name | urlencode }}{% if filters.status %}&status={{ filters.status }}{% endif %}">
+          {{ tag.name }} <span class="chip-count">{{ tag.count }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<form class="batchbar" method="post" action="/cases/run-filtered">
+  <input type="hidden" name="q" value="{% if filters.q %}{{ filters.q }}{% endif %}">
+  <input type="hidden" name="tag" value="{% if filters.tag %}{{ filters.tag }}{% endif %}">
+  <input type="hidden" name="category" value="{% if filters.category %}{{ filters.category }}{% endif %}">
+  <input type="hidden" name="priority" value="{% if filters.priority %}{{ filters.priority }}{% endif %}">
+  <input type="hidden" name="status" value="{% if filters.status %}{{ filters.status }}{% endif %}">
+  <div class="batch-copy">
+    <strong>Run all filtered</strong>
+    <span>{{ total }} case(s) match the current filters. Manual cases stay manual-required in auto mode.</span>
+  </div>
+  <label class="batch-mode" for="batch-mode">Mode</label>
+  <select id="batch-mode" name="mode">
+    <option value="auto" selected>auto — each case’s default</option>
+    <option value="manual">manual — create run sheets</option>
+    <option value="single">single — case driver target</option>
+    <option value="composed">composed — step targets</option>
+  </select>
+  <button class="btn btn-primary" type="submit" {% if total == 0 %}disabled{% endif %}>Run all filtered</button>
+</form>
+
+<form id="bulk-form" method="post" action="/cases/bulk">
+  <input type="hidden" name="ids" id="bulk-ids" value="">
+  <div class="toolbar">
+    <span id="bulk-count">No cases selected</span>
+    <span class="sep">·</span>
+    <select name="action" aria-label="Bulk action">
+      <option value="">Bulk action…</option>
+      <option value="archive">Archive</option>
+      <option value="activate">Activate</option>
+      <option value="tag">Add tag</option>
+      <option value="untag">Remove tag</option>
+      <option value="run">Start manual runs</option>
+    </select>
+    <input type="text" name="tag" list="tag-list" placeholder="tag (add/remove)" style="width: 150px;">
+    <button class="btn btn-sm" type="submit">Apply</button>
+    <span class="spacer"></span>
+    <a class="link-quiet" href="/cases/new">n · new case</a>
+  </div>
+
+  <section class="card" style="border-radius: 0 0 6px 6px; border-top: 0;">
+    {% if cases %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width: 30px;"><input type="checkbox" class="checkbox" data-select-all=".row-check" aria-label="Select all filtered cases"></th>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Tags</th>
+            <th>Priority</th>
+            <th>Status</th>
+            <th>Automation</th>
+            <th>Last run</th>
+            <th class="actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in cases %}
+          <tr>
+            <td><input type="checkbox" class="checkbox row-check" value="{{ case.id }}" aria-label="Select {{ case.id }}"></td>
+            <td class="nowrap">
+              <a class="mono" href="/cases/{{ case.id }}">{{ case.id }}</a>
+              <button type="button" class="copy-btn" data-copy="{{ case.id }}" title="Copy case ID">⧉</button>
+            </td>
+            <td class="title-cell">
+              <a href="/cases/{{ case.id }}">{{ case.title }}</a>
+              {% if case.module %}<div class="small muted">{{ case.module }}</div>{% endif %}
+            </td>
+            <td>
+              <div class="chip-row" style="gap: 4px;">
+                {% for tag in case.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
+                {% if not case.tags %}<span class="small muted">no tags</span>{% endif %}
+              </div>
+            </td>
+            <td><span class="badge badge-{{ case.priority }}">{{ case.priority }}</span></td>
+            <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+            <td class="nowrap">
+              {% if case.automation.automated %}
+                <span class="badge badge-{{ case.automation.default_mode }}">{{ case.automation.default_mode }}</span>
+              {% else %}
+                <span class="badge badge-manual">manual-required</span>
+              {% endif %}
+              {% if not case.automation.persisted %}<span class="tiny muted" title="Migration 0003 pending">*</span>{% endif %}
+            </td>
+            <td class="nowrap">
+              {% if case.last_run %}
+                <a href="/runs?case_id={{ case.id }}">
+                  <span class="badge badge-{{ case.last_run.status }}">{{ case.last_run.status | replace("_", " ") }}</span>
+                </a>
+                <div class="tiny muted">{{ case.last_run.started_at }}</div>
+              {% else %}
+                <span class="small muted">never</span>
+              {% endif %}
+            </td>
+            <td class="actions">
+              <a class="btn btn-sm" href="/cases/{{ case.id }}/edit">Edit</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body">
+      <div class="empty">
+        <h3>No cases match</h3>
+        <p>{% if filters_active %}Clear the filters or widen the search.{% else %}Start the catalogue with the first real test case.{% endif %}</p>
+        {% if filters_active %}<a class="btn" href="/cases">Clear filters</a>{% endif %}
+        <a class="btn btn-primary" href="/cases/new">New case</a>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+</form>
+
+<datalist id="tag-list">
+  {% for tag in tags %}<option value="{{ tag.name }}">{{ tag.category }}</option>{% endfor %}
+</datalist>
+{% endblock %}

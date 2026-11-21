@@ -9,9 +9,11 @@
 //! not implemented: reports are a transient projection, not a SQLite record, so
 //! the rule would need filesystem state and would not be deterministic.
 
+mod check_in;
 mod provider;
 mod rules;
 
+pub use check_in::{CheckIn, CheckInFilter, check_in};
 pub use provider::{
     AiConfig, AiProvider, NOOP_FALLBACK, NoopProvider, OpenAiProvider, provider_from_config,
 };

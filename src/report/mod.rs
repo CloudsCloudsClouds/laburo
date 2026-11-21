@@ -7,6 +7,7 @@
 use crate::model::{self, Attachment, BugReport, TestCase, TestRun};
 use crate::repo::{self, EvidenceOwner};
 use anyhow::{Context, Result, bail};
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -71,11 +72,17 @@ struct CaseProjection {
     module: String,
     priority: String,
     status: String,
+    last_run_status: Option<String>,
     environment: String,
     gherkin: String,
+    driver_target: Option<String>,
+    default_mode: String,
     tags: Vec<String>,
     steps: Vec<StepProjection>,
     requirements: Vec<RequirementProjection>,
+    expected_evidence: Vec<EvidenceProjection>,
+    evidence: Vec<EvidenceProjection>,
+    links: Vec<LinkProjection>,
 }
 
 #[derive(Debug, Serialize)]
@@ -84,6 +91,8 @@ struct StepProjection {
     action: String,
     data: String,
     expected: String,
+    kind: String,
+    driver_target: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,6 +114,7 @@ struct RunProjection {
     notes: String,
     steps: Vec<StepRunProjection>,
     evidence: Vec<EvidenceProjection>,
+    links: Vec<LinkProjection>,
 }
 
 #[derive(Debug, Serialize)]
@@ -129,19 +139,37 @@ struct BugProjection {
     environment: String,
     status: String,
     comments: String,
+    case_id: Option<String>,
+    run_id: Option<String>,
     evidence: Vec<EvidenceProjection>,
+    links: Vec<LinkProjection>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct EvidenceProjection {
     kind: String,
     path: String,
     caption: String,
+    role: String,
+    case_id: Option<String>,
     exists: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct LinkProjection {
+    id: i64,
+    source_kind: String,
+    source_id: String,
+    target_kind: String,
+    target_id: String,
+    relation: String,
+    note: String,
+    /// Resolved target title when the target is a known entity.
+    title: String,
+}
+
 impl CaseProjection {
-    fn from_case(conn: &rusqlite::Connection, case: &TestCase) -> Result<Self> {
+    fn from_case(conn: &rusqlite::Connection, data_dir: &Path, case: &TestCase) -> Result<Self> {
         let mut stmt = conn.prepare(
             "SELECT r.id, r.title
              FROM requirement r
@@ -157,6 +185,25 @@ impl CaseProjection {
         })?;
         let requirements = rows.collect::<rusqlite::Result<Vec<_>>>()?;
 
+        let case_evidence = repo::case_evidence(conn, &case.id)?;
+        let evidence: Vec<EvidenceProjection> = case_evidence
+            .iter()
+            .map(|item| EvidenceProjection::from_attachment(data_dir, item))
+            .collect();
+        let expected_evidence = evidence
+            .iter()
+            .filter(|item| item.role == "expected")
+            .cloned()
+            .collect();
+        let last_run_status = conn
+            .query_row(
+                "SELECT status FROM test_run WHERE case_id = ?1
+                 ORDER BY started_at DESC, id DESC LIMIT 1",
+                [&case.id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+
         Ok(Self {
             id: case.id.clone(),
             title: case.title.clone(),
@@ -164,8 +211,11 @@ impl CaseProjection {
             module: case.module.clone(),
             priority: case.priority.clone(),
             status: case.status.clone(),
+            last_run_status,
             environment: case.environment.clone(),
             gherkin: case.gherkin.clone(),
+            driver_target: case.driver_target.clone(),
+            default_mode: case.default_mode.as_str().to_string(),
             tags: case.tags.clone(),
             steps: case
                 .steps
@@ -175,11 +225,23 @@ impl CaseProjection {
                     action: step.action.clone(),
                     data: step.data.clone(),
                     expected: step.expected.clone(),
+                    kind: step.kind.as_str().to_string(),
+                    driver_target: step.driver_target.clone(),
                 })
                 .collect(),
             requirements,
+            expected_evidence,
+            evidence,
+            links: case_links(conn, &case.id)?,
         })
     }
+}
+
+fn case_links(conn: &rusqlite::Connection, case_id: &str) -> Result<Vec<LinkProjection>> {
+    Ok(repo::list_links(conn, "case", case_id)?
+        .iter()
+        .map(|link| LinkProjection::from_link(conn, link))
+        .collect())
 }
 
 impl RunProjection {
@@ -215,13 +277,17 @@ impl RunProjection {
                 })
                 .collect(),
             evidence,
+            links: repo::list_links(conn, "run", &run.id)?
+                .iter()
+                .map(|link| LinkProjection::from_link(conn, link))
+                .collect(),
         })
     }
 }
 
 impl BugProjection {
-    fn from_bug(data_dir: &Path, bug: &BugReport) -> Self {
-        Self {
+    fn from_bug(conn: &rusqlite::Connection, data_dir: &Path, bug: &BugReport) -> Result<Self> {
+        Ok(Self {
             id: bug.id.clone(),
             title: bug.title.clone(),
             description: bug.description.clone(),
@@ -233,12 +299,59 @@ impl BugProjection {
             environment: bug.environment.clone(),
             status: bug.status.clone(),
             comments: bug.comments.clone(),
+            case_id: bug.case_id.clone(),
+            run_id: bug.run_id.clone(),
             evidence: bug
                 .evidence
                 .iter()
                 .map(|item| EvidenceProjection::from_attachment(data_dir, item))
                 .collect(),
+            links: repo::list_links(conn, "bug", &bug.id)?
+                .iter()
+                .map(|link| LinkProjection::from_link(conn, link))
+                .collect(),
+        })
+    }
+}
+
+impl LinkProjection {
+    fn from_link(conn: &rusqlite::Connection, link: &crate::model::EntityLink) -> Self {
+        Self {
+            id: link.id,
+            source_kind: link.source_kind.clone(),
+            source_id: link.source_id.clone(),
+            target_kind: link.target_kind.clone(),
+            target_id: link.target_id.clone(),
+            relation: link.relation.clone(),
+            note: link.note.clone(),
+            title: link_target_title(conn, &link.target_kind, &link.target_id),
         }
+    }
+}
+
+fn link_target_title(conn: &rusqlite::Connection, kind: &str, id: &str) -> String {
+    match kind {
+        "case" => repo::get_case(conn, id)
+            .ok()
+            .flatten()
+            .map(|case| case.title)
+            .unwrap_or_default(),
+        "bug" => repo::get_bug(conn, id)
+            .ok()
+            .flatten()
+            .map(|bug| bug.title)
+            .unwrap_or_default(),
+        "run" => repo::get_run(conn, id)
+            .ok()
+            .flatten()
+            .map(|run| run.case_id)
+            .unwrap_or_default(),
+        "requirement" => conn
+            .query_row("SELECT title FROM requirement WHERE id=?1", [id], |row| {
+                row.get(0)
+            })
+            .unwrap_or_default(),
+        _ => String::new(),
     }
 }
 
@@ -250,11 +363,15 @@ impl EvidenceProjection {
         } else {
             data_dir.join(path)
         };
-        let exists = absolute.is_file() && embeddable(&absolute, &item.kind);
+        let exists = absolute.is_file()
+            && std::fs::File::open(&absolute).is_ok()
+            && embeddable(&absolute, &item.kind);
         Self {
             kind: item.kind.clone(),
             path: absolute.to_string_lossy().into_owned(),
             caption: item.caption.clone(),
+            role: item.role.clone(),
+            case_id: item.case_id.clone(),
             exists,
         }
     }
@@ -313,7 +430,7 @@ fn build_projection(
         ReportKind::Dictionary => {
             let cases = repo::list_cases(conn, None, None)?
                 .iter()
-                .map(|case| CaseProjection::from_case(conn, case))
+                .map(|case| CaseProjection::from_case(conn, data_dir, case))
                 .collect::<Result<Vec<_>>>()?;
             Ok(Projection {
                 meta,
@@ -327,7 +444,7 @@ fn build_projection(
             let id = id.context("report case requires a case id (e.g. TC-001)")?;
             let case =
                 repo::get_case(conn, id)?.with_context(|| format!("case not found: {id}"))?;
-            let case_projection = CaseProjection::from_case(conn, &case)?;
+            let case_projection = CaseProjection::from_case(conn, data_dir, &case)?;
             let runs = repo::list_runs(conn, Some(id), 1000)?
                 .iter()
                 .map(|run| RunProjection::from_run(conn, data_dir, run))
@@ -335,8 +452,8 @@ fn build_projection(
             let bugs = repo::list_bugs(conn, None)?
                 .iter()
                 .filter(|bug| bug.case_id.as_deref() == Some(id))
-                .map(|bug| BugProjection::from_bug(data_dir, bug))
-                .collect();
+                .map(|bug| BugProjection::from_bug(conn, data_dir, bug))
+                .collect::<Result<Vec<_>>>()?;
             Ok(Projection {
                 meta,
                 case: Some(case_projection),
@@ -349,15 +466,15 @@ fn build_projection(
             let id = id.context("report run requires a run id (e.g. RUN-20261117-180000-1)")?;
             let run = repo::get_run(conn, id)?.with_context(|| format!("run not found: {id}"))?;
             let case = match repo::get_case(conn, &run.case_id)? {
-                Some(case) => Some(CaseProjection::from_case(conn, &case)?),
+                Some(case) => Some(CaseProjection::from_case(conn, data_dir, &case)?),
                 None => None,
             };
             let run_projection = RunProjection::from_run(conn, data_dir, &run)?;
             let bugs = repo::list_bugs(conn, None)?
                 .iter()
                 .filter(|bug| bug.run_id.as_deref() == Some(id))
-                .map(|bug| BugProjection::from_bug(data_dir, bug))
-                .collect();
+                .map(|bug| BugProjection::from_bug(conn, data_dir, bug))
+                .collect::<Result<Vec<_>>>()?;
             Ok(Projection {
                 meta,
                 case,
@@ -371,7 +488,7 @@ fn build_projection(
             let bug = repo::get_bug(conn, id)?.with_context(|| format!("bug not found: {id}"))?;
             let case = match bug.case_id.as_deref() {
                 Some(case_id) => match repo::get_case(conn, case_id)? {
-                    Some(case) => Some(CaseProjection::from_case(conn, &case)?),
+                    Some(case) => Some(CaseProjection::from_case(conn, data_dir, &case)?),
                     None => None,
                 },
                 None => None,
@@ -388,7 +505,7 @@ fn build_projection(
                 case,
                 cases: None,
                 runs,
-                bugs: vec![BugProjection::from_bug(data_dir, &bug)],
+                bugs: vec![BugProjection::from_bug(conn, data_dir, &bug)?],
             })
         }
     }
@@ -597,7 +714,42 @@ mod tests {
             .unwrap();
         repo::link_case_requirement(&db.conn, "TC-001", "RF-01").unwrap();
 
+        std::fs::create_dir_all(data_dir).unwrap();
+        let expected = data_dir.join("expected.log");
+        std::fs::write(&expected, "expected page\n").unwrap();
+        repo::attach_file_with_role(
+            &db.conn,
+            data_dir,
+            repo::EvidenceOwner::Case("TC-001".to_string()),
+            &expected,
+            "expected happy path",
+            "expected",
+        )
+        .unwrap();
+
         let run = repo::create_run(&db.conn, "TC-001", RunMode::Manual, "local").unwrap();
+        let step_evidence = data_dir.join("step.log");
+        std::fs::write(&step_evidence, "step output\n").unwrap();
+        repo::attach_file_with_role(
+            &db.conn,
+            data_dir,
+            repo::EvidenceOwner::StepRun(run.steps[0].id),
+            &step_evidence,
+            "step actual",
+            "actual",
+        )
+        .unwrap();
+        let run_artifact = data_dir.join("artifact.log");
+        std::fs::write(&run_artifact, "run artifact\n").unwrap();
+        repo::attach_file_with_role(
+            &db.conn,
+            data_dir,
+            repo::EvidenceOwner::Run(run.id.clone()),
+            &run_artifact,
+            "run artifact",
+            "artifact",
+        )
+        .unwrap();
         repo::record_step(
             &db.conn,
             &run.id,
@@ -653,6 +805,26 @@ mod tests {
             "server log",
         )
         .unwrap();
+        repo::create_link(
+            &db.conn,
+            "bug",
+            &bug.id,
+            "case",
+            "TC-001",
+            "reproduces",
+            "reproduced by the case",
+        )
+        .unwrap();
+        repo::create_link(
+            &db.conn,
+            "run",
+            &run.id,
+            "case",
+            "TC-001",
+            "evidence-for",
+            "execution evidence",
+        )
+        .unwrap();
 
         (run.id, bug.id)
     }
@@ -690,6 +862,98 @@ mod tests {
                 assert!(json.get(key).is_some(), "data.json lost key {key}");
             }
         }
+    }
+
+    fn projection_json(
+        db: &Db,
+        data_dir: &Path,
+        kind: ReportKind,
+        id: Option<&str>,
+    ) -> serde_json::Value {
+        let pdf = generate(&db.conn, data_dir, kind, id).unwrap();
+        let report_dir = pdf.parent().unwrap();
+        serde_json::from_str(&std::fs::read_to_string(report_dir.join("data.json")).unwrap())
+            .unwrap()
+    }
+
+    fn assert_evidence(item: &serde_json::Value, role: &str) {
+        assert_eq!(item["role"], role);
+        assert_eq!(item["exists"], true, "evidence must exist: {item}");
+        let path = item["path"].as_str().unwrap();
+        assert!(
+            path.starts_with('/'),
+            "evidence path is not absolute: {path}"
+        );
+        assert!(Path::new(path).is_file(), "missing evidence file: {path}");
+    }
+
+    #[test]
+    fn projection_includes_roles_exists_and_links() {
+        let db = Db::open_memory().unwrap();
+        let workspace = tempdir().unwrap();
+        let data_dir = workspace.path().join(".laburo");
+        let (run_id, bug_id) = seed(&db, &data_dir);
+
+        let case = projection_json(&db, &data_dir, ReportKind::Case, Some("TC-001"));
+        let case = &case["case"];
+        assert_evidence(&case["expected_evidence"][0], "expected");
+        assert_evidence(&case["evidence"][0], "expected");
+        let links = case["links"].as_array().unwrap();
+        assert_eq!(links.len(), 2, "{links:?}");
+        assert!(links.iter().any(|link| link["relation"] == "reproduces"
+            && link["target_kind"] == "case"
+            && link["target_id"] == "TC-001"
+            && link["note"] == "reproduced by the case"));
+        assert!(
+            links
+                .iter()
+                .any(|link| link["relation"] == "evidence-for" && link["target_kind"] == "case")
+        );
+
+        let run = projection_json(&db, &data_dir, ReportKind::Run, Some(&run_id));
+        let run = &run["runs"][0];
+        assert_eq!(run["links"][0]["relation"], "evidence-for");
+        assert_evidence(&run["evidence"][0], "artifact");
+        assert_evidence(&run["steps"][0]["evidence"][0], "actual");
+
+        let bug = projection_json(&db, &data_dir, ReportKind::Bug, Some(&bug_id));
+        let bug = &bug["bugs"][0];
+        assert_eq!(bug["case_id"], "TC-001");
+        assert_eq!(bug["run_id"].as_str(), Some(run_id.as_str()));
+        assert_eq!(bug["links"][0]["relation"], "reproduces");
+        assert_eq!(bug["links"][0]["title"], "Book a tour");
+        assert_evidence(&bug["evidence"][0], "evidence");
+        assert_eq!(
+            projection_json(&db, &data_dir, ReportKind::Bug, Some(&bug_id))["case"]["expected_evidence"]
+                [0]["role"],
+            "expected"
+        );
+    }
+
+    #[test]
+    fn missing_evidence_reports_exists_false_and_absolute_path() {
+        let db = Db::open_memory().unwrap();
+        let workspace = tempdir().unwrap();
+        let data_dir = workspace.path().join(".laburo");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        repo::create_case(&db.conn, "TC-001", "Case", "", "", "low", "local", "", &[]).unwrap();
+        let missing = data_dir.join("missing.log");
+        std::fs::write(&missing, "gone\n").unwrap();
+        let attachment = repo::attach_file_with_role(
+            &db.conn,
+            &data_dir,
+            repo::EvidenceOwner::Case("TC-001".to_string()),
+            &missing,
+            "missing later",
+            "expected",
+        )
+        .unwrap();
+        std::fs::remove_file(data_dir.join(&attachment.path)).unwrap();
+
+        let case = projection_json(&db, &data_dir, ReportKind::Case, Some("TC-001"));
+        let item = &case["case"]["expected_evidence"][0];
+        assert_eq!(item["exists"], false);
+        assert!(item["path"].as_str().unwrap().starts_with('/'));
     }
 
     #[test]

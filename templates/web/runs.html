@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Runs{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Runs</h1>
+    <p class="lede">{{ total }} run sheet(s) on record. A run captures the result of every step, raw output and evidence.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="/cases">Start from a case</a>
+    <a class="btn btn-primary" href="/cases?status=active">Pick a case to run</a>
+  </div>
+</div>
+
+<form class="filterbar" method="get" action="/runs">
+  <div class="field grow">
+    <label for="search">Search runs</label>
+    <input id="search" type="search" name="q" value="{% if filters.q %}{{ filters.q }}{% endif %}" placeholder="RUN-…, case ID, environment" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="run-status">Status</label>
+    <select id="run-status" name="status" data-autosubmit>
+      <option value="">Any</option>
+      {% for status in ['running', 'passed', 'failed', 'blocked', 'error', 'not_run'] %}
+      <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status | replace("_", " ") }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="run-case">Case ID</label>
+    <input id="run-case" name="case_id" value="{% if filters.case_id %}{{ filters.case_id }}{% endif %}" placeholder="TC-001">
+  </div>
+  <button class="btn" type="submit">Apply</button>
+  {% if filters_active %}<a class="btn btn-ghost" href="/runs">Clear</a>{% endif %}
+</form>
+
+<section class="card" style="border-radius: 0 0 6px 6px; border-top: 0;">
+  {% if runs %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>Case</th>
+          <th>Mode</th>
+          <th>Status</th>
+          <th>Steps</th>
+          <th>Evidence</th>
+          <th>Started</th>
+          <th class="actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td class="nowrap">
+            <a class="mono" href="/runs/{{ run.id }}">{{ run.id }}</a>
+            <button type="button" class="copy-btn" data-copy="{{ run.id }}" title="Copy run ID">⧉</button>
+          </td>
+          <td><a href="/cases/{{ run.case_id }}">{{ run.case_id }}</a></td>
+          <td><span class="badge badge-{{ run.mode }}">{{ run.mode }}</span></td>
+          <td><span class="badge badge-{{ run.status }}">{{ run.status | replace("_", " ") }}</span></td>
+          <td class="nowrap">
+            <span class="small">{{ run.passed_steps }}/{{ run.step_count }} passed</span>
+            {% if run.failed_steps > 0 %}<div class="tiny" style="color: var(--danger);">{{ run.failed_steps }} failed/blocked</div>{% endif %}
+          </td>
+          <td class="nowrap">{{ run.step_evidence }} step file(s)</td>
+          <td class="muted nowrap">{{ run.started_at }}</td>
+          <td class="actions"><a class="btn btn-sm" href="/runs/{{ run.id }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-foot">{{ shown }} of {{ total }} run(s) shown.</div>
+  {% else %}
+  <div class="card-body">
+    <div class="empty">
+      <h3>No runs match</h3>
+      <p>{% if filters_active %}Clear the filters, or start a run from a case.{% else %}Open a case and press “Start run”. Manual runs are first-class.{% endif %}</p>
+      {% if filters_active %}<a class="btn" href="/runs">Clear filters</a>{% endif %}
+      <a class="btn btn-primary" href="/cases">Choose a case</a>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

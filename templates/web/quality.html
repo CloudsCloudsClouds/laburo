@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Quality{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Quality</h1>
+    <p class="lede">Deterministic findings from the SQLite records. The same database state always yields the same findings; no model call is made.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="/cases?status=active">Review cases</a>
+    <a class="btn" href="/drivers">Automate a case</a>
+  </div>
+</div>
+
+<section class="stats" aria-label="Quality summary">
+  <div class="stat accent">
+    <div class="stat-label">Cases</div>
+    <div class="stat-value">{{ stats.cases }}</div>
+    <div class="stat-sub">{{ automated }} automated · {{ manual }} manual</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Runs</div>
+    <div class="stat-value">{{ stats.runs }}</div>
+    <div class="stat-sub">{{ stats.passed_runs }} passed · {{ stats.failed_runs }} failed</div>
+  </div>
+  <div class="stat {% if stats.bugs_open > 0 %}bad{% endif %}">
+    <div class="stat-label">Open bugs</div>
+    <div class="stat-value">{{ stats.bugs_open }}</div>
+    <div class="stat-sub">{{ stats.bugs_total }} total</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Evidence</div>
+    <div class="stat-value">{{ stats.evidence }}</div>
+    <div class="stat-sub">case, step, run, bug</div>
+  </div>
+  <div class="stat {% if finding_total > 0 %}bad{% else %}good{% endif %}">
+    <div class="stat-label">Findings</div>
+    <div class="stat-value">{{ finding_total }}</div>
+    <div class="stat-sub">deterministic rules</div>
+  </div>
+</section>
+
+<div class="dashboard-grid">
+  <div class="stack">
+    <section class="gate gate-{{ check.status }}">
+      <div class="gate-status">
+        <span class="gate-dot"></span>
+        <span class="gate-title">{% if check.status == 'pass' %}Quality gate passing{% elif check.status == 'warn' %}Quality gate warning{% else %}Quality gate failing{% endif %}</span>
+        <span class="gate-score">{{ check.score }}</span>
+      </div>
+      <div class="gate-bar"><span style="width: {{ check.score }}%"></span></div>
+      <div class="gate-counts">
+        <span>{{ check.failing_runs | length }} failing run(s)</span>
+        <span>{{ check.open_bugs | length }} open bug(s)</span>
+        <span>{{ check.evidence_gaps | length }} evidence gap(s)</span>
+        <span>{{ check.manual_cases }} manual-only</span>
+      </div>
+      <div class="card-foot" style="margin: 12px -14px -14px; border-radius: 0 0 6px 6px;">
+        Mirrors the MCP <span class="mono">laburo_check_in</span> gate: fail on failing mapped runs, open critical/high bugs, or no mapped coverage; warn on manual-only, stale, or missing evidence.
+      </div>
+    </section>
+
+    {% if next_action %}
+    <section class="card">
+      <div class="card-head"><h2>Next action</h2><span class="hint">most urgent finding</span></div>
+      <div class="card-body">
+        <p class="finding-sev {{ next_action.severity }}">{{ next_action.severity }} · {{ next_action.kind }}</p>
+        <p style="margin-top: 4px;">{{ next_action.reason }}</p>
+        <p class="small muted">{{ next_action.suggested_action }}</p>
+        <div class="chip-row" style="margin-top: 8px;">
+          {% for ref in next_action.refs %}<span class="tag">{{ ref }}</span>{% endfor %}
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <div class="card-head"><h2>Findings</h2><span class="hint">{{ finding_total }} total</span></div>
+      {% if findings %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Rule</th>
+              <th>Reason</th>
+              <th>Refs</th>
+              <th>Suggested action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for finding in findings %}
+            <tr>
+              <td><span class="badge badge-{{ finding.severity }}">{{ finding.severity }}</span></td>
+              <td class="mono small nowrap">{{ finding.kind }}</td>
+              <td>{{ finding.reason }}</td>
+              <td class="nowrap">
+                {% for ref in finding.refs %}
+                  {% if ref[:3] == 'TC-' or ref[:5] == 'CASE-' %}<a class="tag" href="/cases/{{ ref }}">{{ ref }}</a>
+                  {% elif ref[:4] == 'RUN-' %}<a class="tag" href="/runs/{{ ref }}">{{ ref }}</a>
+                  {% elif ref[:4] == 'BUG-' %}<a class="tag" href="/bugs/{{ ref }}">{{ ref }}</a>
+                  {% else %}<span class="tag">{{ ref }}</span>{% endif %}
+                {% endfor %}
+              </td>
+              <td class="small muted">{{ finding.suggested_action }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body">
+        <div class="empty">
+          <h3>No findings</h3>
+          <p>Every case has steps, expected results, tags and a run; no failed run is missing a bug; no aged high-severity bug is open.</p>
+          <a class="btn" href="/cases/new">Add the next case</a>
+        </div>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <div class="card-head"><h2>What the rules check</h2></div>
+      <div class="card-body">
+        <ul class="list-clean">
+          <li><span class="grow">Case has steps</span><span class="badge badge-high">high</span></li>
+          <li><span class="grow">Every step has an expected result</span><span class="badge badge-medium">medium</span></li>
+          <li><span class="grow">Failed run has a linked bug</span><span class="badge badge-high">high</span></li>
+          <li><span class="grow">Open bug has reproduction steps</span><span class="badge badge-high">high</span></li>
+          <li><span class="grow">Case has tags</span><span class="badge badge-low">low</span></li>
+          <li><span class="grow">Case has been run at least once</span><span class="badge badge-medium">medium</span></li>
+          <li><span class="grow">No duplicate case titles</span><span class="badge badge-low">low</span></li>
+          <li><span class="grow">Aged severity 1–2 bug</span><span class="badge badge-critical">critical</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Coverage shape</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Cases</dt><dd>{{ stats.cases }}</dd>
+          <dt>Automated</dt><dd>{{ automated }} <span class="muted small">(single/composed)</span></dd>
+          <dt>Manual</dt><dd>{{ manual }} <span class="muted small">(manual-required)</span></dd>
+          <dt>Runs</dt><dd>{{ stats.runs }}</dd>
+          <dt>Evidence</dt><dd>{{ stats.evidence }}</dd>
+        </dl>
+        <p class="small muted" style="margin-top: 10px;">Manual cases are first-class. “Automated” here means a driver target is configured, not that the last run was green.</p>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

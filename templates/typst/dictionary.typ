@@ -1,107 +1,151 @@
-// Class test-case dictionary: every case, with type, level, module, objective,
-// and expected result. Reads `data.json` from the report directory.
+// Class test-case dictionary: cover, summary, dictionary by module, and
+// traceability. Visual language from `plantilla_tc_tqa.typ` /
+// `diccionario_casos_de_prueba.typ`. No legend, instructions, or working notes.
 #import "lib.typ": *
 
 #let data = json("data.json")
+
 #let meta = data.at("meta", default: (:))
 #let cases = list-of(data.at("cases", default: ()))
 #let project = field(meta.at("project", default: ""), default: "Project")
 #let generated = field(meta.at("generated_at", default: ""), default: "")
+#let version = field(meta.at("version", default: ""), default: "")
 
 #let count-status(status) = {
-  cases.filter(item => field(item.at("status", default: "")) == status).len()
+  cases.filter(item => lower(field(item.at("status", default: ""), default: "")) == status).len()
 }
 
-#let tags-of(item) = list-of(item.at("tags", default: ()))
-
-#let tag-in(item, names) = {
-  let found = tags-of(item).find(tag => tag in names)
-  if found == none { "—" } else { found }
+#let with-expected-artifact = {
+  cases.filter(item => expected-evidence(item).len() > 0).len()
 }
 
-#let expected-of(item) = {
-  let steps = list-of(item.at("steps", default: ()))
-  let values = steps
-    .map(step => field(step.at("expected", default: ""), default: ""))
-    .filter(value => value != "")
-  if values.len() == 0 { "—" } else { values.last() }
+#let modules = {
+  let seen = ()
+  for item in cases {
+    let name = field(item.at("module", default: ""), default: "General")
+    if not seen.contains(name) { seen.push(name) }
+  }
+  seen
 }
+
+#let traced = cases.filter(item => {
+  let requirements = list-of(item.at("requirements", default: ()))
+  let links = list-of(item.at("links", default: ()))
+  requirements.len() + links.len() > 0
+})
 
 #show: report-shell.with(
   kind: "Test-case dictionary",
-  title: project,
-  subtitle: if generated == "" { "Test-case dictionary" } else { "Generated " + generated },
+  title: "Test-case dictionary",
+  subtitle: project,
+  footer: "Diccionario de casos de prueba",
 )
 
-#facts((
-  ("Project", project),
-  ("Cases", str(cases.len())),
-  ("Active", str(count-status("active"))),
-  ("Draft", str(count-status("draft"))),
-  ("Archived", str(count-status("archived"))),
-  ("Generated", if generated == "" { "—" } else { generated }),
-))
+// ── Class cover ──────────────────────────────────────────────────────────────
+#v(16pt)
+#block(width: 100%, below: 12pt)[
+  #text(size: 9pt, fill: tqa.grey)[#project]
+  #if generated != "" [#h(6pt) #text(size: 9pt, fill: tqa.grey)[· #generated]]
+  #if version != "" [#h(6pt) #text(size: 9pt, fill: tqa.grey)[· v#version]]
+]
 
-#report-section("Dictionary", [
-  #if cases.len() == 0 [
-    #gap(note: "No test cases in the catalogue.")
-  ] else [
-    #table(
-      columns: (auto, 1.1fr, auto, auto, auto, 1.1fr, 1.1fr, auto),
-      inset: (x: 4pt, y: 4pt),
-      stroke: 0.5pt + palette.rule,
-      table.header(
-        [*ID*],
-        [*Title*],
-        [*Type*],
-        [*Level*],
-        [*Module*],
-        [*Objective*],
-        [*Expected result*],
-        [*Status*],
-      ),
-      ..cases
-        .map(item => (
-          text(size: 8pt, weight: "bold", field(item.at("id", default: ""))),
-          text(size: 8pt, field(item.at("title", default: ""))),
-          text(
-            size: 8pt,
-            tag-in(item, ("functional", "non-functional")),
-          ),
-          text(size: 8pt, tag-in(item, ("unit", "integration", "system"))),
-          text(size: 8pt, field(item.at("module", default: ""))),
-          text(size: 8pt, field(item.at("description", default: ""))),
-          text(size: 8pt, expected-of(item)),
-          status-chip(item.at("status", default: "draft")),
-        ))
-        .flatten(),
+#table(
+  columns: (1fr,) * 3,
+  stroke: 0.5pt + black,
+  inset: 0pt,
+  table.cell(
+    fill: tqa.design,
+    align: center + horizon,
+    inset: (x: 6pt, y: 14pt),
+    text(size: 11pt, weight: "bold")[01 \ DISEÑO],
+  ),
+  table.cell(
+    fill: tqa.exec,
+    align: center + horizon,
+    inset: (x: 6pt, y: 14pt),
+    text(size: 11pt, weight: "bold")[02 \ EJECUCIÓN],
+  ),
+  table.cell(
+    fill: tqa.amber,
+    align: center + horizon,
+    inset: (x: 6pt, y: 14pt),
+    text(size: 11pt, weight: "bold")[03 \ TRAZABILIDAD],
+  ),
+)
+
+#pagebreak()
+
+// ── 1 · Summary ──────────────────────────────────────────────────────────────
+#sec("1 · Resumen")
+
+#ficha(
+  (
+    ("Proyecto", project),
+    ("Casos de prueba", str(cases.len())),
+    ("Activos", str(count-status("active"))),
+    ("Borradores", str(count-status("draft"))),
+    ("Archivados", str(count-status("archived"))),
+    ("Con evidencia esperada", str(with-expected-artifact)),
+    ("Módulos", str(modules.len())),
+    ("Generado", if generated == "" { "—" } else { generated }),
+  ),
+  columns: 4,
+)
+
+// ── 2 · Dictionary ───────────────────────────────────────────────────────────
+#sec("2 · Diccionario de casos de prueba")
+
+#if cases.len() == 0 [
+  #text(fill: tqa.grey, "—")
+] else [
+  #for module in modules {
+    let rows = cases
+      .filter(item => field(item.at("module", default: ""), default: "General") == module)
+      .map(item => (
+        field(item.at("id", default: ""), default: "—"),
+        field(item.at("title", default: ""), default: "—"),
+        tag-in(item, ("functional", "non-functional", "negativa", "negative", "regression")),
+        tag-in(item, ("unit", "integration", "system")),
+        field(item.at("priority", default: ""), default: "—"),
+        field(item.at("description", default: ""), default: "—"),
+        expected-of(item),
+        status-chip(item.at("last_run_status", default: "not_run")),
+      ))
+    subsec(module)
+    registro(
+      tqa.blue,
+      ("TC", "Título", "Tipo", "Nivel", "Prioridad", "Objetivo", "Resultado esperado", "Estado"),
+      rows,
+      columns: (auto, 1.1fr, auto, auto, auto, 1.15fr, 1.15fr, auto),
+      centered: (0, 2, 3, 4, 7),
+      size: 7.5pt,
     )
-  ]
-])
+  }
+]
 
-#let traced = cases.filter(item => list-of(item.at("requirements", default: ())).len() > 0)
+// ── 3 · Traceability ────────────────────────────────────────────────────────
+#sec("3 · Trazabilidad")
 
-#report-section("Traceability", [
-  #if traced.len() == 0 [
-    #gap(note: "No case is linked to a requirement.")
-  ] else [
-    #table(
-      columns: (auto, 1fr, 1fr),
-      inset: (x: 4pt, y: 4pt),
-      stroke: 0.5pt + palette.rule,
-      table.header([*Case*], [*Title*], [*Requirements*]),
-      ..traced
-        .map(item => (
-          text(size: 8pt, weight: "bold", field(item.at("id", default: ""))),
-          text(size: 8pt, field(item.at("title", default: ""))),
-          text(
-            size: 8pt,
-            list-of(item.at("requirements", default: ()))
-              .map(requirement => field(requirement.at("id", default: "")))
-              .join(", "),
-          ),
-        ))
-        .flatten(),
-    )
-  ]
-])
+#if traced.len() == 0 [
+  #text(fill: tqa.grey, "—")
+] else [
+  #registro(
+    tqa.amber,
+    ("TC", "Título", "Requisitos", "Elementos vinculados"),
+    traced.map(item => (
+      field(item.at("id", default: ""), default: "—"),
+      field(item.at("title", default: ""), default: "—"),
+      list-of(item.at("requirements", default: ()))
+        .map(requirement => field(requirement.at("id", default: ""), default: "—"))
+        .join(", "),
+      list-of(item.at("links", default: ()))
+        .map(link => field(link.at("relation", default: "related"), default: "related")
+          + ": "
+          + link-label(link))
+        .join(", "),
+    )),
+    columns: (auto, 1.1fr, 1.2fr, 1.2fr),
+    centered: (0,),
+    size: 8pt,
+  )
+]

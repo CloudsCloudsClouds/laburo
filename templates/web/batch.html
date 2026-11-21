@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Batch run{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/cases">Cases</a><span>/</span>batch run</div>
+    <h1>Batch run summary</h1>
+    <p class="lede">Requested mode: <strong>{{ requested_mode }}</strong>.
+      {% if filters_active %}
+        Filters: {% if filters.tag %}<span class="tag">{{ filters.tag }}</span>{% endif %}
+        {% if filters.category %}<span class="tag">{{ filters.category }}</span>{% endif %}
+        {% if filters.priority %}<span class="tag">{{ filters.priority }}</span>{% endif %}
+        {% if filters.status %}<span class="tag">{{ filters.status }}</span>{% endif %}
+        {% if filters.q %}<span class="tag">q: {{ filters.q }}</span>{% endif %}
+      {% else %}No filters (whole catalogue).{% endif %}
+    </p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="/cases">Back to cases</a>
+    <a class="btn btn-primary" href="/runs">Open runs</a>
+  </div>
+</div>
+
+<section class="stats" aria-label="Batch summary">
+  <div class="stat accent">
+    <div class="stat-label">Attempted</div>
+    <div class="stat-value">{{ summary.attempted }}</div>
+    <div class="stat-sub">{{ summary.selected }} selected</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Created</div>
+    <div class="stat-value">{{ summary.created }}</div>
+    <div class="stat-sub">run sheet(s)</div>
+  </div>
+  <div class="stat {% if summary.passed > 0 %}good{% endif %}">
+    <div class="stat-label">Passed</div>
+    <div class="stat-value">{{ summary.passed }}</div>
+    <div class="stat-sub">finished green</div>
+  </div>
+  <div class="stat {% if summary.failed > 0 %}bad{% endif %}">
+    <div class="stat-label">Failed</div>
+    <div class="stat-value">{{ summary.failed }}</div>
+    <div class="stat-sub">failed or errored</div>
+  </div>
+  <div class="stat {% if summary.manual_required > 0 %}bad{% endif %}">
+    <div class="stat-label">Manual-required</div>
+    <div class="stat-value">{{ summary.manual_required }}</div>
+    <div class="stat-sub">no automation target</div>
+  </div>
+  <div class="stat {% if summary.errors > 0 %}bad{% endif %}">
+    <div class="stat-label">Errors</div>
+    <div class="stat-value">{{ summary.errors }}</div>
+    <div class="stat-sub">batch continued</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Per-case results</h2>
+    <span class="hint">One case never aborts the batch</span>
+  </div>
+  {% if summary.entries %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Case</th>
+          <th>Mode</th>
+          <th>Outcome</th>
+          <th>Run</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in summary.entries %}
+        <tr>
+          <td>
+            <a class="mono" href="/cases/{{ entry.case_id }}">{{ entry.case_id }}</a>
+            <div class="small muted">{{ entry.title }}</div>
+          </td>
+          <td><span class="badge badge-{{ entry.mode }}">{{ entry.mode }}</span></td>
+          <td class="nowrap">
+            <span class="badge badge-{% if entry.outcome == 'manual-required' %}manual{% else %}{{ entry.outcome }}{% endif %}">{{ entry.outcome }}</span>
+          </td>
+          <td class="nowrap">
+            {% if entry.run_id %}<a class="mono" href="/runs/{{ entry.run_id }}">{{ entry.run_id }}</a>
+            {% else %}<span class="small muted">—</span>{% endif %}
+          </td>
+          <td class="small">{{ entry.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-foot">
+    manual-required cases are linked but not silently ignored. Attach a discovered target from the case’s Automation block.
+  </div>
+  {% else %}
+  <div class="card-body">
+    <div class="empty">
+      <h3>No cases matched the filters</h3>
+      <p>Clear the filters or widen the search, then run the batch again.</p>
+      <a class="btn" href="/cases">Clear filters</a>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

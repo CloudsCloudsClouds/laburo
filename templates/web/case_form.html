@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit {{ values.id }}{% else %}New case{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/cases">Cases</a><span>/</span>{% if editing %}<a href="/cases/{{ values.id }}">{{ values.id }}</a><span>/</span>edit{% else %}new{% endif %}</div>
+    <h1>{% if editing %}Edit case{% else %}New case{% endif %}</h1>
+    <p class="lede">A case is a definition of done: ordered steps, observable expectations, tags, and the driver target that automates it.</p>
+  </div>
+  <div class="head-actions">
+    {% if editing %}<a class="btn" href="/cases/{{ values.id }}">Cancel</a>{% else %}<a class="btn" href="/cases">Cancel</a>{% endif %}
+  </div>
+</div>
+
+{% if errors %}
+<div class="alert" role="alert">
+  <strong>Fix these fields before saving:</strong>
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" action="{% if editing %}/cases/{{ values.id }}{% else %}/cases{% endif %}" data-dirty>
+  <section class="card">
+    <div class="card-head"><h2>Identity</h2><span class="hint">ID and title are the stable contract</span></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="case-id">Case ID <span class="req">*</span></label>
+          <input id="case-id" name="id" value="{{ values.id }}" class="mono" maxlength="64"
+                 placeholder="TC-001" {% if editing %}readonly{% endif %} required>
+          <span class="help">{% if editing %}The ID is used by runs, bugs, links and reports.{% else %}Letters, digits, dash, underscore or dot.{% endif %}</span>
+        </div>
+        <div class="field">
+          <label for="case-title">Title <span class="req">*</span></label>
+          <input id="case-title" name="title" value="{{ values.title }}" maxlength="200" placeholder="Book a tour with valid traveller data" required>
+        </div>
+        <div class="field span-2">
+          <label for="case-description">Description</label>
+          <textarea id="case-description" name="description" placeholder="What this case proves, and why it exists.">{{ values.description }}</textarea>
+        </div>
+        <div class="field">
+          <label for="case-module">Module / feature</label>
+          <input id="case-module" name="module" value="{{ values.module }}" placeholder="Bookings" maxlength="120">
+        </div>
+        <div class="field">
+          <label for="case-environment">Environment</label>
+          <input id="case-environment" name="environment" value="{{ values.environment }}" placeholder="local" maxlength="120">
+        </div>
+        <div class="field">
+          <label for="case-priority">Priority</label>
+          <select id="case-priority" name="priority">
+            {% for priority in ['critical', 'high', 'medium', 'low'] %}
+            <option value="{{ priority }}" {% if values.priority == priority %}selected{% endif %}>{{ priority }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="case-status">Status</label>
+          <select id="case-status" name="status">
+            {% for status in ['active', 'draft', 'archived'] %}
+            <option value="{{ status }}" {% if values.status == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Tags</h2><span class="hint">level · type · technique · quality</span></div>
+    <div class="card-body">
+      <div class="field">
+        <label for="tags">Tags (comma or semicolon separated)</label>
+        <input id="tags" name="tags" value="{{ values.tags }}" list="tag-list" placeholder="smoke, functional, system" autocomplete="off">
+        <span class="help">Click a chip to add it. Tags drive filters, batch runs and the dictionary report.</span>
+      </div>
+      {% if tag_suggestions %}
+      <div class="chip-row">
+        {% for tag in tag_suggestions %}
+        <button type="button" class="chip" data-add-tag="tags" data-tag="{{ tag.name }}">{{ tag.name }} <span class="chip-count">{{ tag.count }}</span></button>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <datalist id="tag-list">
+        {% for name in tag_names %}<option value="{{ name }}"></option>{% endfor %}
+      </datalist>
+    </div>
+  </section>
+
+  <section class="card" id="automation">
+    <div class="card-head">
+      <h2>Automation</h2>
+      <span class="hint">Turn a decorative row into a real automated case</span>
+    </div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="default-mode">Default execution mode</label>
+          <select id="default-mode" name="default_mode">
+            <option value="manual" {% if values.default_mode == 'manual' %}selected{% endif %}>manual — a person records each step</option>
+            <option value="single" {% if values.default_mode == 'single' %}selected{% endif %}>single — one driver target for the case</option>
+            <option value="composed" {% if values.default_mode == 'composed' %}selected{% endif %}>composed — per-step driver targets</option>
+          </select>
+          <span class="help">Manual is first-class. Single/composed need a discovered test target.</span>
+        </div>
+        <div class="field">
+          <label for="driver-target">Case-level driver target</label>
+          <input id="driver-target" name="driver_target" value="{{ values.driver_target }}" class="mono" list="driver-test-list" placeholder="test/system/booking_test.rb#BookingTest#test_books">
+          <span class="help">Pick a discovered Minitest test, or paste a file:line target.</span>
+        </div>
+      </div>
+      <datalist id="driver-test-list">
+        {% for test in driver_tests %}
+        <option value="{{ test.id }}">{{ test.name }} · {{ test.file }}{% if test.line %}:{{ test.line }}{% endif %}</option>
+        {% endfor %}
+      </datalist>
+      {% if not driver_tests %}
+      <p class="small muted" style="margin-top: 10px;">No driver tests discovered yet. <a href="/drivers">Open Drivers</a> and run discovery against this project.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Gherkin</h2><span class="hint">Optional, free text</span></div>
+    <div class="card-body">
+      <div class="field">
+        <label for="case-gherkin">Feature / scenario text</label>
+        <textarea id="case-gherkin" name="gherkin" class="mono" style="min-height: 132px;" placeholder="Feature: Booking&#10;  Scenario: valid booking&#10;    Given the catalogue is visible&#10;    When I book a tour&#10;    Then I see a confirmation">{{ values.gherkin }}</textarea>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">{% if editing %}Save case{% else %}Create case{% endif %}</button>
+    {% if editing %}<a class="btn" href="/cases/{{ values.id }}">Cancel</a>{% else %}<a class="btn" href="/cases">Cancel</a>{% endif %}
+    <span class="spacer"></span>
+    <span class="small muted">Unsaved changes are guarded.</span>
+  </div>
+</form>
+
+{% if editing %}
+<form method="post" action="/cases/{{ values.id }}/delete" data-confirm="Delete case {{ values.id }}? Runs and bugs keep their history, but the case design is removed." style="margin-top: 18px;">
+  <button class="btn btn-danger" type="submit">Delete case</button>
+</form>
+{% endif %}
+{% endblock %}

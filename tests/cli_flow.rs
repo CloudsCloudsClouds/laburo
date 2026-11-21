@@ -130,3 +130,184 @@ fn cli_end_to_end_without_drivers_or_reports() {
         String::from_utf8_lossy(&doctor.stderr)
     );
 }
+
+#[test]
+fn cli_batch_automation_and_links() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+    assert!(laburo(project, &["init"]).status.success(), "init failed");
+    let create = laburo(
+        project,
+        &[
+            "case",
+            "create",
+            "--id",
+            "TC-BATCH",
+            "--title",
+            "Batch happy path",
+            "--tag",
+            "smoke",
+            "--tag",
+            "functional",
+            "--step",
+            "Open the catalogue|The catalogue is visible",
+        ],
+    );
+    assert!(
+        create.status.success(),
+        "{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    let automation = laburo(
+        project,
+        &[
+            "case",
+            "set-automation",
+            "TC-BATCH",
+            "--mode",
+            "single",
+            "--target",
+            "test/models/user_test.rb#UserTest#test_valid",
+        ],
+    );
+    assert!(
+        automation.status.success(),
+        "{}",
+        String::from_utf8_lossy(&automation.stderr)
+    );
+    let automation_out = String::from_utf8_lossy(&automation.stdout);
+    assert!(automation_out.contains("mode=single"), "{automation_out}");
+    assert!(
+        automation_out.contains("test/models/user_test.rb#UserTest#test_valid"),
+        "{automation_out}"
+    );
+
+    // A manual case stays manual-required and is reported, not silently ignored.
+    assert!(
+        laburo(
+            project,
+            &[
+                "case",
+                "create",
+                "--id",
+                "TC-MANUAL",
+                "--title",
+                "Manual checks",
+                "--tag",
+                "smoke",
+                "--tag",
+                "functional",
+            ],
+        )
+        .status
+        .success()
+    );
+
+    let batch = laburo(
+        project,
+        &[
+            "run",
+            "batch",
+            "--tag",
+            "smoke",
+            "--type",
+            "functional",
+            "--status",
+            "active",
+            "--mode",
+            "auto",
+            "--dry-run",
+        ],
+    );
+    assert!(
+        batch.status.success(),
+        "{}",
+        String::from_utf8_lossy(&batch.stderr)
+    );
+    let batch_out = String::from_utf8_lossy(&batch.stdout);
+    assert!(batch_out.contains("CREATED"), "{batch_out}");
+    assert!(
+        batch_out.contains("TC-MANUAL") && batch_out.contains("manual-required"),
+        "{batch_out}"
+    );
+    assert!(
+        batch_out.contains("attempted=2") && batch_out.contains("created=1"),
+        "{batch_out}"
+    );
+    assert!(batch_out.contains("manual-required=1"), "{batch_out}");
+
+    let add = laburo(
+        project,
+        &[
+            "link",
+            "add",
+            "bug",
+            "BUG-1",
+            "case",
+            "TC-BATCH",
+            "--relation",
+            "reproduces",
+            "--note",
+            "demo link",
+        ],
+    );
+    assert!(
+        add.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let add_out = String::from_utf8_lossy(&add.stdout);
+    let link_id = add_out
+        .split_whitespace()
+        .next()
+        .expect("link id")
+        .trim_end_matches(':')
+        .to_string();
+
+    let list = laburo(project, &["link", "list", "case", "TC-BATCH"]);
+    assert!(list.status.success());
+    let list_out = String::from_utf8_lossy(&list.stdout);
+    assert!(list_out.contains("BUG-1"), "{list_out}");
+    assert!(list_out.contains("reproduces"), "{list_out}");
+
+    let remove = laburo(project, &["link", "remove", &link_id]);
+    assert!(
+        remove.status.success(),
+        "{}",
+        String::from_utf8_lossy(&remove.stderr)
+    );
+    let after = laburo(project, &["link", "list", "case", "TC-BATCH"]);
+    assert!(String::from_utf8_lossy(&after.stdout).contains("no links"));
+
+    let screenshot = project.join("happy.png");
+    std::fs::write(&screenshot, b"not really a png").unwrap();
+    let evidence = laburo(
+        project,
+        &[
+            "case",
+            "evidence",
+            "TC-BATCH",
+            "--path",
+            screenshot.to_str().unwrap(),
+            "--caption",
+            "happy path screenshot",
+            "--role",
+            "expected",
+        ],
+    );
+    assert!(
+        evidence.status.success(),
+        "{}",
+        String::from_utf8_lossy(&evidence.stderr)
+    );
+    let evidence_out = String::from_utf8_lossy(&evidence.stdout);
+    assert!(evidence_out.contains("role=expected"), "{evidence_out}");
+
+    let db = laburo::db::Db::open(&project.join(".laburo").join("laburo.sqlite3")).unwrap();
+    let attachments = laburo::repo::case_evidence(&db.conn, "TC-BATCH").unwrap();
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].role, "expected");
+    assert_eq!(attachments[0].case_id.as_deref(), Some("TC-BATCH"));
+    assert_eq!(attachments[0].caption, "happy path screenshot");
+}

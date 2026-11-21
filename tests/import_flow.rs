@@ -14,11 +14,7 @@ fn imports_a_class_dictionary_and_links_the_use_case() {
     assert_eq!(case.title, "La reserva persiste");
     assert_eq!(case.steps.len(), 2);
     assert!(case.tags.iter().any(|t| t == "unit"));
-    assert!(
-        case.tags
-            .iter()
-            .any(|t| t == "funcional" || t == "Funcional")
-    );
+    assert!(case.tags.iter().any(|t| t == "functional"));
 
     let requirements: i64 = db
         .conn

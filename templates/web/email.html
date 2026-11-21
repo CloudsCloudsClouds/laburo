@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Email{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Email</h1>
+    <p class="lede">Demo mode: create a standards-compliant <span class="mono">.eml</span> with the report PDF attached and write it to the outbox. No SMTP credentials are required.</p>
+  </div>
+  <div class="head-actions">
+    <span class="badge badge-manual">{{ smtp }}</span>
+  </div>
+</div>
+
+<div class="detail-grid">
+  <div class="stack">
+    <section class="card">
+      <div class="card-head"><h2>Compose</h2><span class="hint">report PDF attached</span></div>
+      <div class="card-body">
+        <form method="post" action="/email" data-dirty>
+          <div class="form-grid">
+            <div class="field">
+              <label for="email-to">To <span class="req">*</span></label>
+              <input id="email-to" name="to" type="email" list="recipient-list" placeholder="professor@example.edu" required>
+            </div>
+            <div class="field">
+              <label for="email-subject">Subject <span class="req">*</span></label>
+              <input id="email-subject" name="subject" placeholder="Laburo report — booking smoke run" required>
+            </div>
+            <div class="field span-2">
+              <label for="email-report">Report to attach <span class="req">*</span></label>
+              <select id="email-report" name="report" required>
+                <option value="">Choose a generated report…</option>
+                {% for report in reports %}
+                <option value="reports/{{ report.dir }}/report.pdf">{{ report.kind }} · {{ report.id }} · {{ report.created }}</option>
+                {% endfor %}
+              </select>
+              {% if not reports %}<span class="help">No reports yet. <a href="/reports">Generate one first</a>.</span>{% endif %}
+            </div>
+            <div class="field span-2">
+              <label for="email-body">Body</label>
+              <textarea id="email-body" name="body" style="min-height: 130px;" placeholder="Hello,&#10;&#10;Attached is the Laburo report generated from the current project records.&#10;">Hello,
+
+Attached is the Laburo report generated from the current project records.
+
+— Laburo</textarea>
+            </div>
+          </div>
+          <datalist id="recipient-list">
+            {% for recipient in recipients %}<option value="{{ recipient }}"></option>{% endfor %}
+          </datalist>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit" {% if not reports %}disabled{% endif %}>Create .eml</button>
+            <span class="small muted">Writes to {{ outbox_dir }} and records the email log.</span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Outbox</h2><span class="hint">{{ outbox | length }} file(s)</span></div>
+      {% if outbox %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>File</th><th>Created</th><th>Size</th><th class="actions">Open</th></tr>
+          </thead>
+          <tbody>
+            {% for file in outbox %}
+            <tr>
+              <td class="mono small">{{ file.name }}</td>
+              <td class="muted nowrap">{{ file.created }}</td>
+              <td class="num nowrap">{{ file.size }} B</td>
+              <td class="actions"><a class="btn btn-sm btn-primary" href="{{ file.url }}">Download .eml</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body">
+        <div class="empty">
+          <h3>Outbox is empty</h3>
+          <p>Generate a report, choose it above, and create the first .eml. Nothing leaves this machine.</p>
+          <a class="btn" href="/reports">Generate a report</a>
+        </div>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <div class="card-head"><h2>Transport</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Status</dt><dd>{{ smtp }}</dd>
+          <dt>Outbox</dt><dd class="mono small">{{ outbox_dir }}</dd>
+          <dt>From</dt><dd class="mono small">Laburo &lt;laburo@localhost&gt;</dd>
+          <dt>Format</dt><dd>MIME multipart with the PDF attached</dd>
+        </dl>
+        <p class="small muted" style="margin-top: 10px;">SMTP is optional and never required for the demo. Set <span class="mono">LABURO_SMTP_*</span> only if a real transport is added later.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Email log</h2><span class="hint">latest 25</span></div>
+      {% if logs %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Created</th><th>To</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for log in logs %}
+            <tr>
+              <td class="muted nowrap">{{ log.created_at }}</td>
+              <td>
+                <span class="small">{{ log.to_addr }}</span>
+                <div class="tiny muted">{{ log.subject }}</div>
+                {% if log.error %}<div class="tiny" style="color: var(--danger);">{{ log.error }}</div>{% endif %}
+              </td>
+              <td><span class="badge badge-{{ log.status }}">{{ log.status }}</span><div class="tiny muted">{{ log.transport }}</div></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body"><p class="small muted">No email log yet. The log records recipient, subject, report, status and file path.</p></div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

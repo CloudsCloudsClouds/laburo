@@ -169,6 +169,43 @@ fn full_fixture_flow_with_driver_and_reports() {
     let auto_out = String::from_utf8_lossy(&auto.stdout);
     assert!(auto_out.contains("passed"), "{auto_out}");
 
+    let target = "test/models/user_test.rb#UserTest#test_valid";
+    let automation = run(
+        &project,
+        &[
+            "case",
+            "set-automation",
+            "TC-001",
+            "--mode",
+            "single",
+            "--target",
+            target,
+        ],
+    );
+    assert!(
+        automation.status.success(),
+        "{}",
+        String::from_utf8_lossy(&automation.stderr)
+    );
+
+    // The single-mode run has one synthetic step, so the driver outcome maps to
+    // position 1 and the run can finish as passed.
+    let batch = run(
+        &project,
+        &["run", "batch", "--tag", "integration", "--mode", "auto"],
+    );
+    assert!(
+        batch.status.success(),
+        "{}",
+        String::from_utf8_lossy(&batch.stderr)
+    );
+    let batch_out = String::from_utf8_lossy(&batch.stdout);
+    assert!(batch_out.contains("PASSED"), "{batch_out}");
+    assert!(
+        batch_out.contains("summary: attempted=1 created=1 passed=1"),
+        "{batch_out}"
+    );
+
     for args in [
         vec!["report", "dictionary"],
         vec!["report", "case", "TC-001"],

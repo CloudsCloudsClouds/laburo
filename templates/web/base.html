@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title }}{% endblock %} · Laburo</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-page="{{ active }}">
+  <header class="topbar">
+    <div class="brand">
+      <a href="/" title="Dashboard (g d)"><span class="brand-mark">L</span>Laburo</a>
+      <span class="brand-sub" title="{{ project }}">{{ project }}</span>
+    </div>
+    <nav class="nav" aria-label="Primary">
+      <a href="/" class="{% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="/cases" class="{% if active == 'cases' %}active{% endif %}">Cases</a>
+      <a href="/runs" class="{% if active == 'runs' %}active{% endif %}">Runs</a>
+      <a href="/bugs" class="{% if active == 'bugs' %}active{% endif %}">Bugs</a>
+      <a href="/drivers" class="{% if active == 'drivers' %}active{% endif %}">Drivers</a>
+      <a href="/reports" class="{% if active == 'reports' %}active{% endif %}">Reports</a>
+      <a href="/quality" class="{% if active == 'quality' %}active{% endif %}">Quality</a>
+      <a href="/email" class="{% if active == 'email' %}active{% endif %}">Email</a>
+    </nav>
+    <div class="topbar-right">
+      <form class="top-search" method="get" action="/search" role="search">
+        <input id="global-search" type="search" name="q" placeholder="Search cases, runs, bugs…" aria-label="Search cases, runs and bugs" autocomplete="off">
+      </form>
+      <span class="local-pill" title="Local project data under .laburo">local</span>
+    </div>
+  </header>
+
+  <main class="page">
+    {% if flash %}
+      <div class="flash" id="flash" role="status">
+        <span>{{ flash }}</span>
+        <button type="button" class="flash-close" aria-label="Dismiss message">×</button>
+      </div>
+    {% endif %}
+    <div id="js-flash" class="flash" role="status" hidden></div>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="foot">
+    Laburo v{{ version }} <span class="sep">·</span> local-first TQA
+    <span class="sep">·</span> <span class="mono">{{ project }}</span>
+    <span class="sep">·</span> Press <span class="kbd">/</span> to search, <span class="kbd">n</span> for a new case
+  </footer>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

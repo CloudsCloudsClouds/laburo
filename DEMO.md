@@ -1,136 +1,134 @@
-# Laburo demo — Elizabeth Tours
+# Laburo v0.2 — demo walkthrough
 
-Prepared: 2026-11-17. Timebox: 5 minutes.
+Target: 15 minutes. Web UI is the centerpiece; MCP is the AI quality loop.
 
-The demo environment is already seeded in `src-elizabeth-tours/.laburo/`:
-
-- SQLite database: `src-elizabeth-tours/.laburo/laburo.sqlite3`
-- 21 test cases imported from `src-elizabeth-tours/tqa/casos.yaml`
-- 41 Minitest tests discovered
-- One generated dictionary PDF:
-  `src-elizabeth-tours/.laburo/reports/20261117-190720-dictionary-all/report.pdf`
-- `.laburo/` is ignored by the Rails repository.
-
-All commands below run from the thesis root unless noted.
-
-## 0. Sanity check (15 s)
+## Prepare (once)
 
 ```bash
-laburo --project src-elizabeth-tours doctor
+cd laburo
+cargo install --path . --locked
+./scripts/demo-seed.sh          # resets only <project>/.laburo
+laburo web --port 3000
 ```
 
-Expected: Rails app, Minitest, SQLite, Typst and nextest marked `ok`; TQA
-dictionary marked `ok`.
+Open <http://127.0.0.1:3000>. The demo project is
+`../src-elizabeth-tours` by default.
 
-## 1. Show the TQA catalogue (30 s)
+## 15-minute script
 
-```bash
-laburo --project src-elizabeth-tours case list | head -8
-laburo --project src-elizabeth-tours case show TC-M02-01-1
-```
+### 0:00 — the problem
 
-This is the class dictionary imported into SQLite. Point out the ID, module,
-priority, tags (`unit`, `Funcional`, `imported`) and the three steps.
+TQA documentation is usually decoration. Laburo makes the dictionary, tests,
+runs, evidence, and bugs one queryable source of truth for a solo dev + AI.
 
-## 2. Show Minitest discovery (30 s)
+### 1:00 — dashboard
 
-```bash
-laburo --project src-elizabeth-tours driver list | head -8
-```
+Show cases, runs, bugs, pass rate, recent failures, quality findings. Point at
+the seeded demo: the Rails suite is real, the evidence is real.
 
-41 real Minitest tests from `test/**/*_test.rb`, with file and line. This is the
-bridge between the catalogue and the Rails suite.
+### 2:30 — cases, tags, filters
 
-## 3. Run a case manually with evidence (60 s)
+Open **Cases**. Filter `smoke`, then `security`, then `system`; search a title;
+clear filters. Show tag chips and counts. This is the “find the right test
+without remembering commands” moment.
 
-```bash
-laburo --project src-elizabeth-tours run manual TC-M02-01-1 \
-  --step-status passed,failed,passed \
-  --note "step 2 fails in the demo" \
-  --evidence laburo/tests/fixtures/evidence/log.txt
-```
+### 4:00 — the Rails suite uplift
 
-Copy the `RUN-...` id from the output, then:
+Open a smoke/sanity happy-path case. Show its real Minitest target
+(`test/...`), the tags, and the last run. Say: the dictionary row is no longer a
+decorator; it points at a real test.
 
-```bash
-laburo --project src-elizabeth-tours run show RUN-...
-```
+### 5:30 — automate a decorative case
 
-Point out: per-step status, notes, evidence attachment.
+Open an imported case that is still manual. Press **Automate**, search a
+discovered Minitest test, pick it, set mode `single`, save. Run it. Show the
+status change.
 
-## 4. File the bug and export the class reports (90 s)
+### 7:00 — expected artifact
 
-```bash
-laburo --project src-elizabeth-tours bug create \
-  --title "Booking step 2 returns 500" \
-  --case TC-M02-01-1 \
-  --run RUN-... \
-  --severity 1 \
-  --actual 500 \
-  --expected "booking created"
-```
+On the case page, show the **expected artifact** (the real happy-path
+screenshot). Explain: the case says what “good” looks like; the run says what
+actually happened.
 
-```bash
-laburo --project src-elizabeth-tours report case TC-M02-01-1
-laburo --project src-elizabeth-tours report dictionary
-```
+### 8:00 — run by tag
 
-Open the printed PDF paths. The case dossier includes the design, the failed
-run, the evidence log, and the linked bug; the dictionary is the class format.
+Back to Cases, filter `smoke`, choose **Run all filtered**, mode `auto`. Show
+the batch summary: attempted, passed, failed, manual-required.
 
-## 5. TUI (45 s)
+### 9:00 — evidence and links
 
-```bash
-laburo --project src-elizabeth-tours tui
-```
+Open a run. Show per-step actual artifacts/logs, linked case, and the
+evidence upload. Show a bug linked to the reproducing case and run.
 
-Navigate with `h/l` or `1–6`: Cases, Runs, Bugs, Reports, Drivers, Dashboard.
-`j/k` moves, `Enter` opens, `Esc` back, `?` help, `q` quits. Open a case and
-press `r` to start a manual run; `p/f/m` records pass/fail/blocked, `n` adds a
-note, `F`/`Esc` finishes.
+### 10:00 — bug from a failure
 
-## 6. Agent surface (20 s)
+Open a failed step, **File bug**. Show prefilled case/run/step, severity,
+evidence. Save. Open the bug; show the reproduction link.
+
+### 11:00 — class-format reports
+
+Open **Reports**. Generate/download the dictionary, case dossier, run sheet,
+and bug report. Open the PDF: class layout/colors, expected/actual artifacts,
+linked TC/run, no legend/instructions.
+
+### 12:00 — email/outbox
+
+Open **Email**. Pick the report, recipient `demo@example.com`, create the
+`.eml`. Show the outbox and download the `.eml`. No SMTP credentials needed.
+
+### 13:00 — the 1%: MCP quality loop
+
+Show the README quality contract. In a terminal, simulate the swarm check-in:
 
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' |
-  laburo --project src-elizabeth-tours mcp
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"laburo_check_in","arguments":{"tag":"smoke"}}}' |
+  laburo --project ../src-elizabeth-tours mcp
 ```
 
-18 MCP tools; an agent can create cases, run them, record steps, attach
-evidence, file bugs, generate reports, and query quality.
-
-## 7. Quality findings (20 s)
+The seeded check-in is **fail 40**: the smoke cases have a failed manual run and
+an open critical bug. Run the smoke batch (web **Run all filtered** or
+`laburo run batch --tag smoke --mode auto`), close the bug, and check in again:
 
 ```bash
-laburo --project src-elizabeth-tours quality
+laburo --project ../src-elizabeth-tours bug close BUG-...
+laburo --project ../src-elizabeth-tours quality
 ```
 
-Deterministic findings: cases with no steps, failed runs without bugs, missing
-expected results. No AI required.
+The same check-in now returns **pass 100**: every smoke case has a recent green
+run and an expected artifact, and no critical bug is open. Point out: the AI
+orchestrates; Laburo remembers and judges.
+
+### 14:30 — close
+
+Web for humans, MCP for agents, SQLite for truth. `laburo web`, `laburo_check_in`,
+class-format PDFs, no secrets.
 
 ## Two-minute version
 
+1. Dashboard.
+2. Filter `smoke`, run all filtered.
+3. Open a case with expected artifact and a real run.
+4. Generate the dictionary PDF.
+5. Show the `.eml` outbox.
+6. Show `laburo_check_in` over MCP.
+
+## Video checklist
+
+- [ ] `./scripts/demo-seed.sh` from a clean state.
+- [ ] `laburo web --port 3000` and browser at 1440p.
+- [ ] No secrets, no `.laburo/` paths with personal data.
+- [ ] Rail test suite green (`bin/rails test` + `bin/rails test:system`).
+- [ ] PDFs open cleanly; no legend/instruction text.
+- [ ] `.eml` downloads and contains the PDF attachment.
+- [ ] MCP check-in returns a readable verdict.
+- [ ] Close with the repo link and the quality-contract idea.
+
+## Reset
+
 ```bash
-laburo --project src-elizabeth-tours doctor
-laburo --project src-elizabeth-tours case show TC-M02-01-1
-laburo --project src-elizabeth-tours driver list | head -5
-laburo --project src-elizabeth-tours report dictionary
+./scripts/demo-seed.sh
 ```
 
-## Reset the demo data
-
-```bash
-rm -rf src-elizabeth-tours/.laburo
-laburo --project src-elizabeth-tours init
-laburo --project src-elizabeth-tours import
-laburo --project src-elizabeth-tours driver discover
-```
-
-## Notes
-
-- `laburo` is installed in `~/.cargo/bin/laburo`.
-- Typst is invoked as an external command; no Rust dependency.
-- No YAML is written by Laburo; `casos.yaml` is imported once.
-- Reports keep `.typ`, `data.json` and `report.pdf` together.
+Only `<project>/.laburo` is reset; the Rails repo and its tests are untouched.

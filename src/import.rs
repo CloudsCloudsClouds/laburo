@@ -141,10 +141,7 @@ fn insert_case(
         title = case_id.to_string();
     }
     let description = first_text(prueba, &["objetivo", "description"]);
-    let mut priority = first_text(prueba, &["prioridad", "priority"]);
-    if priority.is_empty() {
-        priority = "medium".to_string();
-    }
+    let priority = canonical_priority(&first_text(prueba, &["prioridad", "priority"]));
     let tags = tags_for(prueba);
 
     repo::create_case(
@@ -172,8 +169,8 @@ fn case_exists(conn: &Connection, case_id: &str) -> Result<bool> {
 }
 
 fn tags_for(prueba: &Mapping) -> Vec<String> {
-    let level = first_text(prueba, &["nivel", "level"]);
-    let kind = first_text(prueba, &["tipo", "type"]);
+    let level = canonical_tag(&first_text(prueba, &["nivel", "level"]));
+    let kind = canonical_tag(&first_text(prueba, &["tipo", "type"]));
     let mut tags: Vec<String> = Vec::new();
     for tag in [level.as_str(), kind.as_str(), "imported"] {
         let tag = tag.trim();
@@ -182,6 +179,36 @@ fn tags_for(prueba: &Mapping) -> Vec<String> {
         }
     }
     tags
+}
+
+fn canonical_priority(raw: &str) -> String {
+    let value = raw.trim().to_lowercase();
+    match value.as_str() {
+        "alta" | "high" => "high".to_string(),
+        "media" | "medium" => "medium".to_string(),
+        "baja" | "low" => "low".to_string(),
+        "crítica" | "critica" | "critical" => "critical".to_string(),
+        "" => "medium".to_string(),
+        _ => value,
+    }
+}
+
+fn canonical_tag(raw: &str) -> String {
+    let value = raw.trim().to_lowercase();
+    match value.as_str() {
+        "funcional" | "functional" => "functional".to_string(),
+        "no funcional" | "no-funcional" | "non functional" | "non-functional" => {
+            "non-functional".to_string()
+        }
+        "negativa" | "negative" => "negative".to_string(),
+        "regresión" | "regresion" | "regression" => "regression".to_string(),
+        "configuración" | "configuracion" | "configuration" => "configuration".to_string(),
+        "unitaria" | "unit" => "unit".to_string(),
+        "integración" | "integracion" | "integration" => "integration".to_string(),
+        "sistema" | "system" => "system".to_string(),
+        "" => String::new(),
+        _ => value,
+    }
 }
 
 struct StepData {
@@ -375,14 +402,14 @@ modulos:
         let case = repo::get_case(&db.conn, "TC-M01-01-1").unwrap().unwrap();
         assert_eq!(case.title, "El contenido se guarda");
         assert_eq!(case.description, "Comprobar que el contenido persiste.");
-        assert_eq!(case.priority, "Alta");
+        assert_eq!(case.priority, "high");
         assert_eq!(case.status, "active");
         assert_eq!(case.environment, "local");
         assert_eq!(case.gherkin, "");
         assert!(case.module.contains("M-01"));
         assert!(case.module.contains("Gestión web"));
 
-        assert_eq!(case.tags, vec!["Funcional", "imported", "unit"]);
+        assert_eq!(case.tags, vec!["functional", "imported", "unit"]);
 
         assert_eq!(case.steps.len(), 2);
         assert_eq!(case.steps[0].position, 1);

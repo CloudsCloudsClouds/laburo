@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}{{ bug.id }} · {{ bug.title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/bugs">Bugs</a><span>/</span>{{ bug.id }}</div>
+    <h1>{{ bug.title }}</h1>
+    <div class="meta-row">
+      <span class="id-chip">{{ bug.id }} <button type="button" class="copy-btn" data-copy="{{ bug.id }}" title="Copy bug ID">⧉</button></span>
+      <span class="badge badge-{{ bug.status }}">{{ bug.status }}</span>
+      <span class="badge badge-sev-{{ bug.severity }}">severity {{ bug.severity }}</span>
+      <span class="badge badge-p{{ bug.priority }}">priority {{ bug.priority }}</span>
+      {% if bug.environment %}<span class="sep">·</span><span>{{ bug.environment }}</span>{% endif %}
+      <span class="sep">·</span><span>{{ bug.created_at }}</span>
+    </div>
+  </div>
+  <div class="head-actions">
+    <form class="inline-form" method="post" action="/reports/bug/{{ bug.id }}">
+      <button class="btn" type="submit">Bug PDF</button>
+    </form>
+    <a class="btn" href="/bugs/new?case_id={% if bug.case_id %}{{ bug.case_id }}{% endif %}&run_id={% if bug.run_id %}{{ bug.run_id }}{% endif %}">File another</a>
+  </div>
+</div>
+
+{% if not bug.case_id %}
+<div class="alert alert-warn" role="status">
+  This bug has no reproducing case. <a class="btn btn-sm" href="/cases/new?from_bug={{ bug.id }}">Create a case from this bug</a>
+  so the defect becomes a permanent standard trigger.
+</div>
+{% endif %}
+
+<div class="detail-grid">
+  <div class="stack">
+    <section class="card">
+      <div class="card-head"><h2>Report</h2></div>
+      <div class="card-body prose">
+        {% if bug.description %}<p>{{ bug.description }}</p>{% else %}<p class="muted">No description.</p>{% endif %}
+        {% if bug.steps %}
+        <div class="section-label">Reproduction steps</div>
+        <pre class="gherkin">{{ bug.steps }}</pre>
+        {% endif %}
+        <div class="form-grid" style="margin-top: 14px;">
+          <div>
+            <div class="section-label">Actual behaviour</div>
+            <div class="gherkin" style="border-left-color: #c98f8f;">{% if bug.actual %}{{ bug.actual }}{% else %}<span class="muted">not recorded</span>{% endif %}</div>
+          </div>
+          <div>
+            <div class="section-label">Expected behaviour</div>
+            <div class="gherkin" style="border-left-color: #93bb9f;">{% if bug.expected %}{{ bug.expected }}{% else %}<span class="muted">not recorded</span>{% endif %}</div>
+          </div>
+        </div>
+        {% if bug.comments %}
+        <div class="section-label">Comments</div>
+        <p>{{ bug.comments }}</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card" id="evidence">
+      <div class="card-head"><h2>Evidence</h2><span class="hint">screenshots, logs, PDFs</span></div>
+      <div class="card-body">
+        {% if evidence %}
+        <div class="evidence-grid">
+          {% for item in evidence %}
+          <div class="evidence-item">
+            {% if item.is_image %}
+            <a href="{{ item.url }}" target="_blank" rel="noopener"><img src="{{ item.url }}" alt="{{ item.caption }}" loading="lazy"></a>
+            {% else %}
+            <div class="file" style="padding: 18px 10px; text-align: center;"><span class="file-pill">{{ item.kind }}</span></div>
+            {% endif %}
+            <div class="meta">
+              <strong>{{ item.original_name }}</strong>
+              {% if item.caption %}{{ item.caption }}<br>{% endif %}
+              <a href="{{ item.url }}" target="_blank" rel="noopener">open</a>
+              <span class="sep">·</span>{{ item.role }}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted small">No evidence attached. A log or screenshot makes the bug reproducible.</p>
+        {% endif %}
+        <form method="post" action="/bugs/{{ bug.id }}/evidence" enctype="multipart/form-data" style="margin-top: 12px;">
+          <div class="upload">
+            <div class="field">
+              <label for="bug-file">File</label>
+              <input id="bug-file" type="file" name="file" required>
+            </div>
+            <div class="field">
+              <label for="bug-caption">Caption</label>
+              <input id="bug-caption" name="caption" placeholder="Rails log, 500 screenshot…">
+            </div>
+            <div class="field">
+              <label for="bug-role">Role</label>
+              <select id="bug-role" name="role">
+                <option value="evidence" selected>evidence</option>
+                <option value="actual">actual</option>
+                <option value="artifact">artifact</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-sm" type="submit" style="margin-top: 8px;">Upload evidence</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="card">
+      <div class="card-head"><h2>Lifecycle</h2></div>
+      <div class="card-body">
+        <div class="chip-row">
+          {% for status in ['open', 'reopened', 'resolved', 'closed'] %}
+          <form method="post" action="/bugs/{{ bug.id }}/status">
+            <input type="hidden" name="status" value="{{ status }}">
+            <button class="btn btn-sm {% if bug.status == status %}btn-primary{% endif %}" type="submit">{{ status }}</button>
+          </form>
+          {% endfor %}
+        </div>
+        <p class="small muted" style="margin-top: 10px;">No assignment queue. Status is the lifecycle.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Reproducer</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Case</dt>
+          <dd>{% if bug.case_id %}<a href="/cases/{{ bug.case_id }}">{{ bug.case_id }}</a>{% else %}<span style="color: var(--warn);">none</span>{% endif %}</dd>
+          <dt>Run</dt>
+          <dd>{% if bug.run_id %}<a class="mono" href="/runs/{{ bug.run_id }}">{{ bug.run_id }}</a>{% else %}<span class="muted">none</span>{% endif %}</dd>
+          <dt>Step</dt>
+          <dd>{% if step_run %}<a href="/runs/{{ step_run.run_id }}#step-{{ step_run.position }}">step {{ step_run.position }}</a>{% else %}<span class="muted">none</span>{% endif %}</dd>
+          <dt>Environment</dt><dd>{{ bug.environment }}</dd>
+        </dl>
+        {% if not bug.case_id %}
+        <p style="margin-top: 10px;"><a class="btn btn-sm" href="/cases/new?from_bug={{ bug.id }}">Create case from bug</a></p>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if case %}
+    <section class="card">
+      <div class="card-head"><h2>Case under test</h2></div>
+      <div class="card-body">
+        <a href="/cases/{{ case.id }}" style="font-weight: 600;">{{ case.title }}</a>
+        <div class="small muted" style="margin-top: 3px;">{{ case.id }} · {{ case.module }}</div>
+        <div class="chip-row" style="margin-top: 8px;">
+          {% for tag in case.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <div class="card-head"><h2>Linked items</h2></div>
+      <div class="card-body">
+        {% if links %}
+        {% for link in links %}
+        <div class="link-item">
+          <span class="link-rel">{{ link.relation }}</span>
+          <span class="grow">
+            {% if link.source_kind == 'bug' and link.source_id == bug.id %}
+              → {% if link.target_kind == 'requirement' %}<span>requirement {{ link.target_id }}</span>{% else %}<a href="/{{ link.target_kind }}s/{{ link.target_id }}">{{ link.target_kind }} {{ link.target_id }}</a>{% endif %}
+            {% else %}
+              ← {% if link.source_kind == 'requirement' %}<span>requirement {{ link.source_id }}</span>{% else %}<a href="/{{ link.source_kind }}s/{{ link.source_id }}">{{ link.source_kind }} {{ link.source_id }}</a>{% endif %}
+            {% endif %}
+            {% if link.note %}<span class="small muted" style="display:block;">{{ link.note }}</span>{% endif %}
+          </span>
+          <form method="post" action="/links/{{ link.id }}/delete" data-confirm="Remove this link?">
+            <input type="hidden" name="return_to" value="/bugs/{{ bug.id }}">
+            <button class="copy-btn" type="submit" title="Remove link">×</button>
+          </form>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="small muted">No links.</p>
+        {% endif %}
+        <form method="post" action="/links" style="margin-top: 12px;">
+          <input type="hidden" name="source_kind" value="bug">
+          <input type="hidden" name="source_id" value="{{ bug.id }}">
+          <input type="hidden" name="return_to" value="/bugs/{{ bug.id }}">
+          <div class="field">
+            <label for="link-kind">Target kind</label>
+            <select id="link-kind" name="target_kind" data-link-kind="link-target">
+              <option value="case">case</option>
+              <option value="run">run</option>
+              <option value="bug">bug</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="link-target">Target ID</label>
+            <input id="link-target" name="target_id" class="mono" list="link-targets" required>
+          </div>
+          <div class="field">
+            <label for="link-relation">Relation</label>
+            <select id="link-relation" name="relation">
+              <option value="reproduces">reproduces</option>
+              <option value="found-in">found-in</option>
+              <option value="evidence-for">evidence-for</option>
+              <option value="related">related</option>
+            </select>
+          </div>
+          <button class="btn btn-sm" type="submit">Add link</button>
+        </form>
+        <datalist id="link-targets">
+          {% for id in case_ids %}<option value="{{ id }}"></option>{% endfor %}
+          {% for id in run_ids %}<option value="{{ id }}"></option>{% endfor %}
+          {% for id in bug_ids %}<option value="{{ id }}"></option>{% endfor %}
+        </datalist>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Metadata</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Created</dt><dd>{{ bug.created_at }}</dd>
+          <dt>Updated</dt><dd>{{ bug.updated_at }}</dd>
+          <dt>Report</dt><dd>
+            <form method="post" action="/reports/bug/{{ bug.id }}"><button class="btn btn-sm" type="submit">Generate bug PDF</button></form>
+          </dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

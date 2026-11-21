@@ -1,17 +1,22 @@
 use crate::model::{
-    Attachment, BugReport, Dashboard, DiscoveredTest, RunMode, RunStatus, StepKind, StepRun,
-    TestCase, TestRun, TestStep, now,
+    Attachment, BugReport, CaseFilter, Dashboard, DiscoveredTest, EmailLog, EntityLink, RunMode,
+    RunStatus, StepKind, StepRun, TestCase, TestRun, TestStep, now,
 };
-use anyhow::{Context, Result};
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use anyhow::{Context, Result, bail};
+use rusqlite::types::Value;
+use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-const CASE_COLS: &str =
-    "id,title,description,module,priority,status,environment,gherkin,created_at,updated_at";
+const CASE_COLS: &str = "id,title,description,module,priority,status,environment,gherkin,created_at,updated_at,driver_target,default_mode";
+
+const ATTACHMENT_COLS: &str = "id,kind,path,original_name,mime,sha256,size,caption,created_at,step_run_id,run_id,bug_id,case_id,role";
+
+const ATTACHMENT_ROLES: [&str; 4] = ["expected", "actual", "artifact", "evidence"];
 
 fn row_to_case(row: &Row<'_>) -> rusqlite::Result<TestCase> {
+    let default_mode: String = row.get(11)?;
     Ok(TestCase {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -23,6 +28,8 @@ fn row_to_case(row: &Row<'_>) -> rusqlite::Result<TestCase> {
         gherkin: row.get(7)?,
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
+        driver_target: row.get(10)?,
+        default_mode: RunMode::from_str(&default_mode).unwrap_or(RunMode::Manual),
         tags: Vec::new(),
         steps: Vec::new(),
     })
@@ -110,7 +117,7 @@ pub fn create_case(
 pub fn update_case(conn: &Connection, case: &TestCase) -> Result<()> {
     conn.execute(
         "UPDATE test_case SET title=?2,description=?3,module=?4,priority=?5,status=?6,
-         environment=?7,gherkin=?8,updated_at=?9 WHERE id=?1",
+         environment=?7,gherkin=?8,updated_at=?9,driver_target=?10,default_mode=?11 WHERE id=?1",
         params![
             case.id,
             case.title,
@@ -120,11 +127,33 @@ pub fn update_case(conn: &Connection, case: &TestCase) -> Result<()> {
             case.status,
             case.environment,
             case.gherkin,
-            now()
+            now(),
+            case.driver_target,
+            case.default_mode.as_str()
         ],
     )?;
     set_tags(conn, &case.id, &case.tags)?;
     Ok(())
+}
+
+/// Point a case at a discovered test and choose its default execution mode.
+pub fn set_case_automation(
+    conn: &Connection,
+    case_id: &str,
+    mode: RunMode,
+    driver_target: Option<&str>,
+) -> Result<TestCase> {
+    let target = driver_target
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let changed = conn.execute(
+        "UPDATE test_case SET default_mode=?2,driver_target=?3,updated_at=?4 WHERE id=?1",
+        params![case_id, mode.as_str(), target, now()],
+    )?;
+    if changed == 0 {
+        bail!("case not found: {case_id}");
+    }
+    get_case(conn, case_id)?.context("case disappeared after setting automation")
 }
 
 pub fn delete_case(conn: &Connection, id: &str) -> Result<bool> {
@@ -157,6 +186,82 @@ pub fn list_cases(
     let rows = stmt.query_map(params![status, tag], row_to_case)?;
     let cases = rows.collect::<rusqlite::Result<Vec<_>>>()?;
     cases.into_iter().map(|c| hydrate_case(conn, c)).collect()
+}
+
+fn non_empty_filter(value: &Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// List cases matching every provided filter. Empty filters are ignored.
+///
+/// `q` matches the id, title, module, or step action/expected text
+/// case-insensitively. `category` matches the tag category (level, type,
+/// technique, quality).
+pub fn list_cases_filtered(conn: &Connection, filter: &CaseFilter) -> Result<Vec<TestCase>> {
+    let mut sql = format!("SELECT {CASE_COLS} FROM test_case c WHERE 1=1");
+    let mut values: Vec<Value> = Vec::new();
+
+    if let Some(q) = non_empty_filter(&filter.q) {
+        let pattern = format!("%{}%", q.to_lowercase());
+        sql.push_str(
+            " AND (lower(c.id) LIKE ?
+                OR lower(c.title) LIKE ?
+                OR lower(c.module) LIKE ?
+                OR EXISTS (
+                    SELECT 1 FROM test_step s
+                    WHERE s.case_id=c.id
+                      AND (lower(s.action) LIKE ? OR lower(s.expected) LIKE ?)))",
+        );
+        for _ in 0..5 {
+            values.push(Value::Text(pattern.clone()));
+        }
+    }
+    if let Some(tag) = non_empty_filter(&filter.tag) {
+        sql.push_str(
+            " AND EXISTS (
+                SELECT 1 FROM case_tag ct JOIN tag t ON t.id=ct.tag_id
+                WHERE ct.case_id=c.id AND t.name=?)",
+        );
+        values.push(Value::Text(tag));
+    }
+    if let Some(category) = non_empty_filter(&filter.category) {
+        sql.push_str(
+            " AND EXISTS (
+                SELECT 1 FROM case_tag ct JOIN tag t ON t.id=ct.tag_id
+                WHERE ct.case_id=c.id AND t.category=?)",
+        );
+        values.push(Value::Text(category));
+    }
+    if let Some(priority) = non_empty_filter(&filter.priority) {
+        sql.push_str(" AND c.priority=?");
+        values.push(Value::Text(priority));
+    }
+    if let Some(status) = non_empty_filter(&filter.status) {
+        sql.push_str(" AND c.status=?");
+        values.push(Value::Text(status));
+    }
+    sql.push_str(" ORDER BY c.id");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(values.iter()), row_to_case)?;
+    let cases = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    cases.into_iter().map(|c| hydrate_case(conn, c)).collect()
+}
+
+/// `(name, category, count)` for every tag, including unused tags.
+pub fn tag_counts(conn: &Connection) -> Result<Vec<(String, String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.name, t.category, count(ct.case_id)
+         FROM tag t LEFT JOIN case_tag ct ON ct.tag_id=t.id
+         GROUP BY t.id
+         ORDER BY t.category, t.name",
+    )?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -244,7 +349,15 @@ pub fn create_run(
          VALUES (?1,?2,?3,'running',?4,?5)",
         params![id, case_id, mode.as_str(), stamp, environment],
     )?;
-    if case.steps.is_empty() {
+    if mode == RunMode::Single {
+        // `single` runs the case-level driver target as one synthetic step, so
+        // the driver outcome maps to position 1 regardless of the case steps.
+        conn.execute(
+            "INSERT INTO step_run (run_id,step_id,position,status,driver_test)
+             VALUES (?1,NULL,1,'not_run',?2)",
+            params![id, case.driver_target],
+        )?;
+    } else if case.steps.is_empty() {
         conn.execute(
             "INSERT INTO step_run (run_id,position,status) VALUES (?1,1,'not_run')",
             [&id],
@@ -482,41 +595,43 @@ pub enum EvidenceOwner {
     StepRun(i64),
     Run(String),
     Bug(String),
+    Case(String),
+}
+
+fn row_to_attachment(row: &Row<'_>) -> rusqlite::Result<Attachment> {
+    Ok(Attachment {
+        id: row.get(0)?,
+        kind: row.get(1)?,
+        path: row.get(2)?,
+        original_name: row.get(3)?,
+        mime: row.get(4)?,
+        sha256: row.get(5)?,
+        size: row.get(6)?,
+        caption: row.get(7)?,
+        created_at: row.get(8)?,
+        step_run_id: row.get(9)?,
+        run_id: row.get(10)?,
+        bug_id: row.get(11)?,
+        case_id: row.get(12)?,
+        role: row.get(13)?,
+    })
 }
 
 pub fn load_evidence(conn: &Connection, owner: EvidenceOwner) -> Result<Vec<Attachment>> {
-    let (sql, key) = match &owner {
-        EvidenceOwner::StepRun(id) => (
-            "SELECT id,kind,path,original_name,mime,sha256,size,caption,created_at,step_run_id,run_id,bug_id FROM attachment WHERE step_run_id=?1 ORDER BY id",
-            id.to_string(),
-        ),
-        EvidenceOwner::Run(id) => (
-            "SELECT id,kind,path,original_name,mime,sha256,size,caption,created_at,step_run_id,run_id,bug_id FROM attachment WHERE run_id=?1 ORDER BY id",
-            id.clone(),
-        ),
-        EvidenceOwner::Bug(id) => (
-            "SELECT id,kind,path,original_name,mime,sha256,size,caption,created_at,step_run_id,run_id,bug_id FROM attachment WHERE bug_id=?1 ORDER BY id",
-            id.clone(),
-        ),
+    let (column, key) = match &owner {
+        EvidenceOwner::StepRun(id) => ("step_run_id", id.to_string()),
+        EvidenceOwner::Run(id) => ("run_id", id.clone()),
+        EvidenceOwner::Bug(id) => ("bug_id", id.clone()),
+        EvidenceOwner::Case(id) => ("case_id", id.clone()),
     };
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map([key], |r| {
-        Ok(Attachment {
-            id: r.get(0)?,
-            kind: r.get(1)?,
-            path: r.get(2)?,
-            original_name: r.get(3)?,
-            mime: r.get(4)?,
-            sha256: r.get(5)?,
-            size: r.get(6)?,
-            caption: r.get(7)?,
-            created_at: r.get(8)?,
-            step_run_id: r.get(9)?,
-            run_id: r.get(10)?,
-            bug_id: r.get(11)?,
-        })
-    })?;
+    let sql = format!("SELECT {ATTACHMENT_COLS} FROM attachment WHERE {column}=?1 ORDER BY id");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([key], row_to_attachment)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn case_evidence(conn: &Connection, case_id: &str) -> Result<Vec<Attachment>> {
+    load_evidence(conn, EvidenceOwner::Case(case_id.to_string()))
 }
 
 pub fn attach_file(
@@ -526,6 +641,25 @@ pub fn attach_file(
     source: &Path,
     caption: &str,
 ) -> Result<Attachment> {
+    attach_file_with_role(conn, data_dir, owner, source, caption, "evidence")
+}
+
+pub fn attach_file_with_role(
+    conn: &Connection,
+    data_dir: &Path,
+    owner: EvidenceOwner,
+    source: &Path,
+    caption: &str,
+    role: &str,
+) -> Result<Attachment> {
+    let role = role.trim();
+    let role = if role.is_empty() { "evidence" } else { role };
+    if !ATTACHMENT_ROLES.contains(&role) {
+        bail!(
+            "unknown attachment role: {role}; expected one of {}",
+            ATTACHMENT_ROLES.join(", ")
+        );
+    }
     let bytes =
         std::fs::read(source).with_context(|| format!("reading evidence {}", source.display()))?;
     let mut hasher = Sha256::new();
@@ -561,39 +695,35 @@ pub fn attach_file(
         _ => "file",
     };
     let mime = mime_for(&safe);
-    let (step_run_id, run_id, bug_id) = match owner {
-        EvidenceOwner::StepRun(id) => (Some(id), None, None),
-        EvidenceOwner::Run(id) => (None, Some(id), None),
-        EvidenceOwner::Bug(id) => (None, None, Some(id)),
+    let (step_run_id, run_id, bug_id, case_id) = match owner {
+        EvidenceOwner::StepRun(id) => (Some(id), None, None, None),
+        EvidenceOwner::Run(id) => (None, Some(id), None, None),
+        EvidenceOwner::Bug(id) => (None, None, Some(id), None),
+        EvidenceOwner::Case(id) => (None, None, None, Some(id)),
     };
     conn.execute(
-        "INSERT INTO attachment (kind,path,original_name,mime,sha256,size,caption,created_at,step_run_id,run_id,bug_id)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-        params![kind, rel, name, mime, hash, bytes.len() as i64, caption, now(), step_run_id, run_id, bug_id],
+        "INSERT INTO attachment (kind,path,original_name,mime,sha256,size,caption,created_at,step_run_id,run_id,bug_id,case_id,role)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+        params![
+            kind,
+            rel,
+            name,
+            mime,
+            hash,
+            bytes.len() as i64,
+            caption,
+            now(),
+            step_run_id,
+            run_id,
+            bug_id,
+            case_id,
+            role
+        ],
     )?;
     let id = conn.last_insert_rowid();
-    conn.query_row(
-        "SELECT id,kind,path,original_name,mime,sha256,size,caption,created_at,step_run_id,run_id,bug_id
-         FROM attachment WHERE id=?1",
-        [id],
-        |r| {
-            Ok(Attachment {
-                id: r.get(0)?,
-                kind: r.get(1)?,
-                path: r.get(2)?,
-                original_name: r.get(3)?,
-                mime: r.get(4)?,
-                sha256: r.get(5)?,
-                size: r.get(6)?,
-                caption: r.get(7)?,
-                created_at: r.get(8)?,
-                step_run_id: r.get(9)?,
-                run_id: r.get(10)?,
-                bug_id: r.get(11)?,
-            })
-        },
-    )
-    .map_err(Into::into)
+    let sql = format!("SELECT {ATTACHMENT_COLS} FROM attachment WHERE id=?1");
+    conn.query_row(&sql, [id], row_to_attachment)
+        .map_err(Into::into)
 }
 
 fn mime_for(name: &str) -> &'static str {
@@ -606,6 +736,159 @@ fn mime_for(name: &str) -> &'static str {
         "pdf" => "application/pdf",
         _ => "application/octet-stream",
     }
+}
+
+fn row_to_link(row: &Row<'_>) -> rusqlite::Result<EntityLink> {
+    Ok(EntityLink {
+        id: row.get(0)?,
+        source_kind: row.get(1)?,
+        source_id: row.get(2)?,
+        target_kind: row.get(3)?,
+        target_id: row.get(4)?,
+        relation: row.get(5)?,
+        note: row.get(6)?,
+        created_at: row.get(7)?,
+    })
+}
+
+const LINK_COLS: &str = "id,source_kind,source_id,target_kind,target_id,relation,note,created_at";
+
+/// Create an edge, or return the existing edge for the same relation.
+pub fn create_link(
+    conn: &Connection,
+    source_kind: &str,
+    source_id: &str,
+    target_kind: &str,
+    target_id: &str,
+    relation: &str,
+    note: &str,
+) -> Result<EntityLink> {
+    for (label, value) in [
+        ("source kind", source_kind),
+        ("source id", source_id),
+        ("target kind", target_kind),
+        ("target id", target_id),
+        ("relation", relation),
+    ] {
+        if value.trim().is_empty() {
+            bail!("{label} must not be empty");
+        }
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO entity_link
+         (source_kind,source_id,target_kind,target_id,relation,note,created_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        params![
+            source_kind.trim(),
+            source_id.trim(),
+            target_kind.trim(),
+            target_id.trim(),
+            relation.trim(),
+            note,
+            now()
+        ],
+    )?;
+    let sql = format!(
+        "SELECT {LINK_COLS} FROM entity_link
+         WHERE source_kind=?1 AND source_id=?2 AND target_kind=?3 AND target_id=?4 AND relation=?5"
+    );
+    conn.query_row(
+        &sql,
+        params![
+            source_kind.trim(),
+            source_id.trim(),
+            target_kind.trim(),
+            target_id.trim(),
+            relation.trim()
+        ],
+        row_to_link,
+    )
+    .map_err(Into::into)
+}
+
+/// List every edge that touches `kind`/`id`, in either direction.
+pub fn list_links(conn: &Connection, kind: &str, id: &str) -> Result<Vec<EntityLink>> {
+    let sql = format!(
+        "SELECT {LINK_COLS} FROM entity_link
+         WHERE (source_kind=?1 AND source_id=?2) OR (target_kind=?1 AND target_id=?2)
+         ORDER BY id"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![kind, id], row_to_link)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn delete_link(conn: &Connection, id: i64) -> Result<bool> {
+    Ok(conn.execute("DELETE FROM entity_link WHERE id=?1", [id])? > 0)
+}
+
+fn row_to_email_log(row: &Row<'_>) -> rusqlite::Result<EmailLog> {
+    Ok(EmailLog {
+        id: row.get(0)?,
+        created_at: row.get(1)?,
+        to_addr: row.get(2)?,
+        subject: row.get(3)?,
+        report_path: row.get(4)?,
+        status: row.get(5)?,
+        transport: row.get(6)?,
+        file_path: row.get(7)?,
+        error: row.get(8)?,
+    })
+}
+
+const EMAIL_LOG_COLS: &str =
+    "id,created_at,to_addr,subject,report_path,status,transport,file_path,error";
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_email_log(
+    conn: &Connection,
+    to: &str,
+    subject: &str,
+    report_path: &str,
+    status: &str,
+    transport: &str,
+    file_path: &str,
+    error: &str,
+) -> Result<EmailLog> {
+    conn.execute(
+        "INSERT INTO email_log
+         (created_at,to_addr,subject,report_path,status,transport,file_path,error)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![
+            now(),
+            to,
+            subject,
+            report_path,
+            status,
+            transport,
+            file_path,
+            error
+        ],
+    )?;
+    let id = conn.last_insert_rowid();
+    let sql = format!("SELECT {EMAIL_LOG_COLS} FROM email_log WHERE id=?1");
+    conn.query_row(&sql, [id], row_to_email_log)
+        .map_err(Into::into)
+}
+
+pub fn list_email_logs(conn: &Connection, limit: i64) -> Result<Vec<EmailLog>> {
+    let sql = format!(
+        "SELECT {EMAIL_LOG_COLS} FROM email_log ORDER BY created_at DESC, id DESC LIMIT ?1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([limit], row_to_email_log)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn recent_email_recipients(conn: &Connection, limit: i64) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT to_addr FROM email_log
+         GROUP BY to_addr
+         ORDER BY max(created_at) DESC, max(id) DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map([limit], |row| row.get::<_, String>(0))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 pub fn ensure_driver(conn: &Connection, id: &str, kind: &str, name: &str) -> Result<()> {

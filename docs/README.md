@@ -6,7 +6,9 @@ Docs are the spec. Code follows them; the author owns direction.
 
 | Document | What it answers |
 |---|---|
-| [`../GOAL.md`](../GOAL.md) | The SMART objective and acceptance criteria for `/goal`. |
+| [`../GOAL-v0.2.md`](../GOAL-v0.2.md) | The current v0.2 objective and acceptance criteria. |
+| [`v0.2-contracts.md`](v0.2-contracts.md) | Frozen v0.2 schema, repo API, web routes, email, MCP gate. |
+| [`../GOAL.md`](../GOAL.md) | Historical v0.1 objective. |
 | [`vision.md`](vision.md) | Why Laburo exists, for whom, and what it refuses to be. |
 | [`use-cases.md`](use-cases.md) | Tier 1 and Tier 2 use cases, actors, primitives, acceptance. |
 | [`architecture.md`](architecture.md) | Components, boundaries, data flow, key decisions. |

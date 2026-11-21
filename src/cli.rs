@@ -2,7 +2,7 @@
 
 use crate::config::{ProjectConfig, init_project};
 use crate::db::Db;
-use crate::model::{RunMode, RunStatus, StepKind};
+use crate::model::{CaseFilter, RunMode, RunStatus, StepKind, TestOutcome};
 use crate::repo;
 use crate::report::ReportKind;
 use anyhow::{Context, Result, bail};
@@ -50,6 +50,12 @@ pub enum Command {
     Db(DbArgs),
     /// Deterministic quality findings.
     Quality(QualityArgs),
+    /// Link entities (case, run, bug, requirement, step).
+    Link(LinkArgs),
+    /// Run the local web UI.
+    Web(WebArgs),
+    /// Create an `.eml` with a report attached (demo outbox).
+    Email(EmailArgs),
     /// Run the MCP stdio server.
     Mcp,
     /// Open the TUI.
@@ -83,6 +89,30 @@ pub enum CaseCommand {
         #[command(subcommand)]
         command: StepCommand,
     },
+    /// Set the case-level driver target and default execution mode.
+    SetAutomation(SetAutomation),
+    /// Attach evidence to a case (for example the expected happy-path screenshot).
+    Evidence(CaseEvidence),
+}
+
+#[derive(Debug, Args)]
+pub struct CaseEvidence {
+    pub id: String,
+    #[arg(long)]
+    pub path: PathBuf,
+    #[arg(long, default_value = "")]
+    pub caption: String,
+    #[arg(long, default_value = "evidence")]
+    pub role: String,
+}
+
+#[derive(Debug, Args)]
+pub struct SetAutomation {
+    pub id: String,
+    #[arg(long, default_value = "manual")]
+    pub mode: String,
+    #[arg(long)]
+    pub target: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -191,6 +221,58 @@ pub enum RunCommand {
     Finish {
         run: String,
     },
+    /// Start runs for every case matching the filters.
+    Batch(BatchArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BatchArgs {
+    /// Exact tag name.
+    #[arg(long)]
+    pub tag: Option<String>,
+    /// Tag value in the `type` category, e.g. functional.
+    #[arg(long = "type")]
+    pub type_tag: Option<String>,
+    /// Tag value in the `level` category, e.g. system.
+    #[arg(long)]
+    pub level: Option<String>,
+    #[arg(long)]
+    pub status: Option<String>,
+    /// auto (case default), manual, single, or composed.
+    #[arg(long, default_value = "auto")]
+    pub mode: String,
+    #[arg(long, default_value = "minitest")]
+    pub driver: String,
+    /// Create the runs but do not execute drivers.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct LinkArgs {
+    #[command(subcommand)]
+    pub command: LinkCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LinkCommand {
+    Add {
+        source_kind: String,
+        source_id: String,
+        target_kind: String,
+        target_id: String,
+        #[arg(long, default_value = "related")]
+        relation: String,
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    List {
+        kind: String,
+        id: String,
+    },
+    Remove {
+        id: i64,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -297,6 +379,39 @@ pub struct QualityArgs {
     pub json: bool,
 }
 
+#[derive(Debug, Args)]
+pub struct WebArgs {
+    #[arg(long, default_value_t = 3000)]
+    pub port: u16,
+    #[arg(long, default_value = "127.0.0.1")]
+    pub host: String,
+    #[arg(long)]
+    pub open: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct EmailArgs {
+    #[command(subcommand)]
+    pub command: EmailCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EmailCommand {
+    Send(SendEmail),
+}
+
+#[derive(Debug, Args)]
+pub struct SendEmail {
+    #[arg(long)]
+    pub to: String,
+    #[arg(long)]
+    pub subject: String,
+    #[arg(long)]
+    pub report: PathBuf,
+    #[arg(long, default_value = "Laburo report attached.")]
+    pub body: String,
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     let Some(command) = cli.command else {
         Cli::command().print_help()?;
@@ -314,6 +429,11 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Import(args) => with_project(cli.project, |cfg| cmd_import(cfg, args)),
         Command::Db(args) => with_project(cli.project, |cfg| cmd_db(cfg, args)),
         Command::Quality(args) => with_project(cli.project, |cfg| cmd_quality(cfg, args)),
+        Command::Link(args) => with_project(cli.project, |cfg| cmd_link(cfg, args)),
+        Command::Web(args) => with_project(cli.project, |cfg| {
+            crate::web::run(&cfg.root, &args.host, args.port, args.open)
+        }),
+        Command::Email(args) => with_project(cli.project, |cfg| cmd_email(cfg, args)),
         Command::Mcp => with_project(cli.project, |cfg| crate::mcp::run(&cfg.root)),
         Command::Tui => with_project(cli.project, |cfg| crate::tui::run(&cfg.root)),
     }
@@ -368,7 +488,8 @@ fn cmd_doctor(project: Option<PathBuf>) -> Result<()> {
     let gemfile = cfg.root.join("Gemfile");
     let minitest = std::fs::read_to_string(&gemfile)
         .map(|s| s.contains("minitest"))
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || cfg.root.join("test").join("test_helper.rb").is_file();
     check("Minitest", minitest, gemfile.display().to_string(), false);
     let dictionary = cfg.root.join("tqa").join("casos.yaml");
     check(
@@ -508,6 +629,30 @@ fn cmd_case(cfg: &ProjectConfig, args: CaseArgs) -> Result<()> {
                 println!("added step {} to {}: {}", step.position, case, step.action);
             }
         },
+        CaseCommand::SetAutomation(args) => {
+            let mode = RunMode::from_str(&args.mode).map_err(|e| anyhow::anyhow!(e))?;
+            let case = repo::set_case_automation(&db.conn, &args.id, mode, args.target.as_deref())?;
+            println!(
+                "{}: mode={} target={}",
+                case.id,
+                case.default_mode.as_str(),
+                case.driver_target.as_deref().unwrap_or("-")
+            );
+        }
+        CaseCommand::Evidence(args) => {
+            let attachment = repo::attach_file_with_role(
+                &db.conn,
+                &cfg.data_dir,
+                repo::EvidenceOwner::Case(args.id.clone()),
+                &args.path,
+                &args.caption,
+                &args.role,
+            )?;
+            println!(
+                "attached {} to {} as role={} ({})",
+                attachment.original_name, args.id, attachment.role, attachment.path
+            );
+        }
     }
     Ok(())
 }
@@ -518,6 +663,10 @@ fn print_case(case: &crate::model::TestCase) {
     println!("  priority:    {}", case.priority);
     println!("  status:      {}", case.status);
     println!("  environment: {}", case.environment);
+    println!("  mode:        {}", case.default_mode.as_str());
+    if let Some(target) = &case.driver_target {
+        println!("  target:      {target}");
+    }
     println!("  tags:        {}", case.tags.join(", "));
     if !case.description.is_empty() {
         println!("  description: {}", case.description);
@@ -599,23 +748,27 @@ fn cmd_run(cfg: &ProjectConfig, args: RunArgs) -> Result<()> {
             }
             let case_obj = repo::get_case(&db.conn, &case)?
                 .with_context(|| format!("case not found: {case}"))?;
+            let mode = RunMode::from_str(&mode).map_err(|e| anyhow::anyhow!(e))?;
             let mut targets = targets;
             if targets.is_empty() {
-                targets = case_obj
-                    .steps
-                    .iter()
-                    .filter_map(|s| s.driver_target.clone())
-                    .collect();
+                targets = batch_targets(&case_obj, mode);
             }
             if targets.is_empty() {
-                bail!("no targets: pass --target or set driver_target on a step");
+                bail!(
+                    "no targets: pass --target, set the case driver_target, or set driver_target on a step"
+                );
             }
-            let mode = RunMode::from_str(&mode).map_err(|e| anyhow::anyhow!(e))?;
             let environment = environment.unwrap_or_else(|| "local".to_string());
             let run = repo::create_run(&db.conn, &case, mode, &environment)?;
             let outcomes = crate::driver::run_minitest(&cfg.root, &targets)?;
             for (i, outcome) in outcomes.iter().enumerate() {
                 let position = (i + 1) as i64;
+                let driver_test = run
+                    .steps
+                    .iter()
+                    .find(|step| step.position == position)
+                    .and_then(|step| step.driver_test.clone())
+                    .unwrap_or_else(|| outcome.target.clone());
                 repo::record_step(
                     &db.conn,
                     &run.id,
@@ -624,7 +777,7 @@ fn cmd_run(cfg: &ProjectConfig, args: RunArgs) -> Result<()> {
                     &outcome.message,
                     &outcome.backtrace,
                     outcome.duration_ms,
-                    Some(&outcome.target),
+                    Some(&driver_test),
                     &outcome.raw_output,
                 )?;
                 if !keep_going && outcome.status.is_bad() {
@@ -679,8 +832,206 @@ fn cmd_run(cfg: &ProjectConfig, args: RunArgs) -> Result<()> {
             let run = repo::finish_run(&db.conn, &run)?;
             print_run(&run);
         }
+        RunCommand::Batch(args) => {
+            if args.driver != "minitest" {
+                bail!("unsupported driver: {} (only minitest)", args.driver);
+            }
+            let requested = args.mode.to_ascii_lowercase();
+            if !matches!(
+                requested.as_str(),
+                "auto" | "manual" | "single" | "composed"
+            ) {
+                bail!(
+                    "mode must be auto, manual, single, or composed: {mode}",
+                    mode = args.mode
+                );
+            }
+            let filter = CaseFilter {
+                q: None,
+                tag: args.tag.clone(),
+                category: None,
+                priority: None,
+                status: args.status.clone(),
+            };
+            let mut cases = repo::list_cases_filtered(&db.conn, &filter)?;
+            if let Some(type_tag) = args.type_tag.as_deref().map(str::trim) {
+                if !type_tag.is_empty() {
+                    cases.retain(|case| {
+                        case.tags
+                            .iter()
+                            .any(|tag| tag.eq_ignore_ascii_case(type_tag))
+                    });
+                }
+            }
+            if let Some(level) = args.level.as_deref().map(str::trim) {
+                if !level.is_empty() {
+                    cases
+                        .retain(|case| case.tags.iter().any(|tag| tag.eq_ignore_ascii_case(level)));
+                }
+            }
+            let mut summary = BatchSummary {
+                selected: cases.len(),
+                ..BatchSummary::default()
+            };
+            println!("batch: {} case(s) selected", summary.selected);
+            for case in cases {
+                summary.attempted += 1;
+                let mode = match requested.as_str() {
+                    "auto" => case.default_mode,
+                    other => RunMode::from_str(other).map_err(|e| anyhow::anyhow!(e))?,
+                };
+                if mode == RunMode::Manual && requested == "auto" {
+                    summary.manual_required += 1;
+                    println!("SKIP {} — manual-required (no automation)", case.id);
+                    continue;
+                }
+                let targets = batch_targets(&case, mode);
+                if mode != RunMode::Manual && targets.is_empty() {
+                    summary.manual_required += 1;
+                    println!("SKIP {} — manual-required (no driver target)", case.id);
+                    continue;
+                }
+                let run = match repo::create_run(&db.conn, &case.id, mode, &case.environment) {
+                    Ok(run) => run,
+                    Err(err) => {
+                        summary.errors += 1;
+                        println!("ERROR {} — creating run: {err:#}", case.id);
+                        continue;
+                    }
+                };
+                summary.created += 1;
+                if args.dry_run || mode == RunMode::Manual {
+                    println!(
+                        "CREATED {} — {} ({} mode){}",
+                        run.id,
+                        case.id,
+                        mode.as_str(),
+                        if args.dry_run { " [dry-run]" } else { "" }
+                    );
+                    continue;
+                }
+                match crate::driver::run_minitest(&cfg.root, &targets) {
+                    Ok(outcomes) if outcomes.is_empty() => {
+                        let message = "Minitest driver returned no outcomes";
+                        record_run_error(&db.conn, &run, message);
+                        let finished = repo::finish_run(&db.conn, &run.id)?;
+                        summary.errors += 1;
+                        println!("ERROR {} — {} — {message}", case.id, finished.id);
+                    }
+                    Ok(outcomes) => {
+                        if let Err(err) = record_outcomes(&db.conn, &run, &outcomes) {
+                            summary.errors += 1;
+                            println!("ERROR {} — recording steps: {err:#}", case.id);
+                            record_run_error(&db.conn, &run, &format!("{err:#}"));
+                        }
+                        let finished = repo::finish_run(&db.conn, &run.id)?;
+                        match finished.status {
+                            RunStatus::Passed => summary.passed += 1,
+                            RunStatus::Failed | RunStatus::Error => summary.failed += 1,
+                            _ => {}
+                        }
+                        println!(
+                            "{} {} — {} — {}",
+                            finished.status.as_str().to_uppercase(),
+                            finished.id,
+                            case.id,
+                            finished.mode.as_str()
+                        );
+                    }
+                    Err(err) => {
+                        let message = format!("Minitest driver failed: {err:#}");
+                        record_run_error(&db.conn, &run, &message);
+                        let finished = repo::finish_run(&db.conn, &run.id)?;
+                        summary.errors += 1;
+                        println!("ERROR {} — {} — {message}", case.id, finished.id);
+                    }
+                }
+            }
+            println!(
+                "summary: attempted={} created={} passed={} failed={} manual-required={} errors={}",
+                summary.attempted,
+                summary.created,
+                summary.passed,
+                summary.failed,
+                summary.manual_required,
+                summary.errors
+            );
+        }
     }
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct BatchSummary {
+    selected: usize,
+    attempted: usize,
+    created: usize,
+    passed: usize,
+    failed: usize,
+    manual_required: usize,
+    errors: usize,
+}
+
+fn batch_targets(case: &crate::model::TestCase, mode: RunMode) -> Vec<String> {
+    match mode {
+        RunMode::Manual => Vec::new(),
+        RunMode::Single => case.driver_target.iter().cloned().collect(),
+        RunMode::Composed => {
+            let mut targets: Vec<String> = case
+                .steps
+                .iter()
+                .filter_map(|step| step.driver_target.clone())
+                .collect();
+            if targets.is_empty() {
+                targets.extend(case.driver_target.iter().cloned());
+            }
+            targets
+        }
+    }
+}
+
+fn record_outcomes(
+    conn: &rusqlite::Connection,
+    run: &crate::model::TestRun,
+    outcomes: &[TestOutcome],
+) -> Result<()> {
+    for (index, outcome) in outcomes.iter().enumerate() {
+        let position = (index + 1) as i64;
+        let driver_test = run
+            .steps
+            .iter()
+            .find(|step| step.position == position)
+            .and_then(|step| step.driver_test.clone())
+            .unwrap_or_else(|| outcome.target.clone());
+        repo::record_step(
+            conn,
+            &run.id,
+            position,
+            outcome.status,
+            &outcome.message,
+            &outcome.backtrace,
+            outcome.duration_ms,
+            Some(&driver_test),
+            &outcome.raw_output,
+        )?;
+    }
+    Ok(())
+}
+
+fn record_run_error(conn: &rusqlite::Connection, run: &crate::model::TestRun, message: &str) {
+    for step in &run.steps {
+        let _ = repo::record_step(
+            conn,
+            &run.id,
+            step.position,
+            RunStatus::Error,
+            message,
+            "",
+            None,
+            step.driver_test.as_deref(),
+            message,
+        );
+    }
 }
 
 fn print_run(run: &crate::model::TestRun) {
@@ -865,6 +1216,27 @@ fn cmd_db(cfg: &ProjectConfig, args: DbArgs) -> Result<()> {
     Ok(())
 }
 
+fn cmd_email(cfg: &ProjectConfig, args: EmailArgs) -> Result<()> {
+    let db = open_db(cfg)?;
+    match args.command {
+        EmailCommand::Send(send) => {
+            if !send.report.is_file() {
+                bail!("report not found: {}", send.report.display());
+            }
+            let path = crate::email::write_eml(
+                cfg,
+                &db.conn,
+                &send.to,
+                &send.subject,
+                &send.body,
+                &send.report,
+            )?;
+            println!("{}", path.display());
+        }
+    }
+    Ok(())
+}
+
 fn cmd_quality(cfg: &ProjectConfig, args: QualityArgs) -> Result<()> {
     let db = open_db(cfg)?;
     let findings = crate::ai::quality_findings(&db.conn)?;
@@ -882,6 +1254,65 @@ fn cmd_quality(cfg: &ProjectConfig, args: QualityArgs) -> Result<()> {
                 finding.refs.join(", ")
             );
             println!("         -> {}", finding.suggested_action);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_link(cfg: &ProjectConfig, args: LinkArgs) -> Result<()> {
+    let db = open_db(cfg)?;
+    match args.command {
+        LinkCommand::Add {
+            source_kind,
+            source_id,
+            target_kind,
+            target_id,
+            relation,
+            note,
+        } => {
+            let link = repo::create_link(
+                &db.conn,
+                &source_kind,
+                &source_id,
+                &target_kind,
+                &target_id,
+                &relation,
+                &note,
+            )?;
+            println!(
+                "{}: {}:{} --{}--> {}:{}",
+                link.id,
+                link.source_kind,
+                link.source_id,
+                link.relation,
+                link.target_kind,
+                link.target_id
+            );
+        }
+        LinkCommand::List { kind, id } => {
+            let links = repo::list_links(&db.conn, &kind, &id)?;
+            if links.is_empty() {
+                println!("no links");
+            }
+            for link in links {
+                println!(
+                    "{:<5} {:<10} {:<16} --{:<13}--> {:<10} {:<16} {}",
+                    link.id,
+                    link.source_kind,
+                    link.source_id,
+                    link.relation,
+                    link.target_kind,
+                    link.target_id,
+                    link.note
+                );
+            }
+        }
+        LinkCommand::Remove { id } => {
+            if repo::delete_link(&db.conn, id)? {
+                println!("removed link {id}");
+            } else {
+                bail!("link not found: {id}");
+            }
         }
     }
     Ok(())

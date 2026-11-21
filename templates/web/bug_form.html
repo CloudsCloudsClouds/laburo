@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}File bug{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/bugs">Bugs</a><span>/</span>new</div>
+    <h1>File a bug</h1>
+    <p class="lede">A bug is most useful when it points at the case that reproduces it and the run/step where it was found. Both are optional, but the UI will warn.</p>
+  </div>
+  <div class="head-actions"><a class="btn" href="/bugs">Cancel</a></div>
+</div>
+
+{% if errors %}
+<div class="alert" role="alert">
+  <strong>Fix these fields before filing:</strong>
+  <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if not has_case %}
+<div class="alert alert-warn" role="status">
+  No reproducing case is selected. <a href="/cases">Pick a case</a> or continue: a bug without a standard trigger is allowed, and you can create a case from it later.
+</div>
+{% endif %}
+{% if has_run %}
+<div class="alert alert-info" role="status">
+  Prefilled from the run sheet. The run and step stay linked to this bug.
+</div>
+{% endif %}
+
+<form method="post" action="/bugs" data-dirty>
+  <section class="card">
+    <div class="card-head"><h2>Report</h2><span class="hint">ID is generated when left blank</span></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="bug-id">Bug ID</label>
+          <input id="bug-id" name="id" value="{{ values.id }}" class="mono" placeholder="BUG-20261121-1 (auto)" maxlength="64">
+        </div>
+        <div class="field">
+          <label for="bug-title">Title <span class="req">*</span></label>
+          <input id="bug-title" name="title" value="{{ values.title }}" placeholder="Booking confirmation returns HTTP 500" maxlength="200" required>
+        </div>
+        <div class="field span-2">
+          <label for="bug-description">Description</label>
+          <textarea id="bug-description" name="description" placeholder="What is wrong, and why it matters.">{{ values.description }}</textarea>
+        </div>
+        <div class="field span-2">
+          <label for="bug-steps">Reproduction steps</label>
+          <textarea id="bug-steps" name="steps" class="mono" style="min-height: 110px;" placeholder="1. Open /tours&#10;2. Book with 2 travellers&#10;3. Submit">{{ values.steps }}</textarea>
+        </div>
+        <div class="field">
+          <label for="bug-actual">Actual behaviour</label>
+          <textarea id="bug-actual" name="actual" placeholder="HTTP 500; no confirmation">{{ values.actual }}</textarea>
+        </div>
+        <div class="field">
+          <label for="bug-expected">Expected behaviour</label>
+          <textarea id="bug-expected" name="expected" placeholder="A confirmation page with the booking reference">{{ values.expected }}</textarea>
+        </div>
+        <div class="field">
+          <label for="bug-priority">Priority</label>
+          <select id="bug-priority" name="priority">
+            <option value="1" {% if values.priority == '1' %}selected{% endif %}>1 — highest</option>
+            <option value="2" {% if values.priority == '2' %}selected{% endif %}>2 — high</option>
+            <option value="3" {% if values.priority == '3' %}selected{% endif %}>3 — normal</option>
+            <option value="4" {% if values.priority == '4' %}selected{% endif %}>4 — low</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="bug-severity">Severity</label>
+          <select id="bug-severity" name="severity">
+            <option value="1" {% if values.severity == '1' %}selected{% endif %}>1 — critical</option>
+            <option value="2" {% if values.severity == '2' %}selected{% endif %}>2 — high</option>
+            <option value="3" {% if values.severity == '3' %}selected{% endif %}>3 — medium</option>
+            <option value="4" {% if values.severity == '4' %}selected{% endif %}>4 — low</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="bug-environment">Environment</label>
+          <input id="bug-environment" name="environment" value="{{ values.environment }}" placeholder="local">
+        </div>
+        <div class="field">
+          <label for="bug-comments">Comments</label>
+          <input id="bug-comments" name="comments" placeholder="optional">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Reproducer</h2><span class="hint">Strongly recommended</span></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="bug-case">Reproducing case</label>
+          <input id="bug-case" name="case_id" value="{{ values.case_id }}" class="mono" list="case-ids" placeholder="TC-001">
+          <span class="help">Links the bug to the standard trigger.</span>
+        </div>
+        <div class="field">
+          <label for="bug-run">Run / step where found</label>
+          <input id="bug-run" name="run_id" value="{{ values.run_id }}" class="mono" list="run-ids" placeholder="RUN-…">
+        </div>
+        <input type="hidden" name="step_run_id" value="{{ values.step_run_id }}">
+      </div>
+      <datalist id="case-ids">
+        {% for id in case_ids %}<option value="{{ id }}"></option>{% endfor %}
+      </datalist>
+      <datalist id="run-ids">
+        {% for id in run_ids %}<option value="{{ id }}"></option>{% endfor %}
+      </datalist>
+      <datalist id="bug-ids">
+        {% for id in bug_ids %}<option value="{{ id }}"></option>{% endfor %}
+      </datalist>
+      {% if not has_run %}
+      <p class="small muted">No run selected. Evidence can still be attached after filing.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">File bug</button>
+    <a class="btn" href="/bugs">Cancel</a>
+    <span class="spacer"></span>
+    <span class="small muted">You can attach evidence and change status after filing.</span>
+  </div>
+</form>
+{% endblock %}

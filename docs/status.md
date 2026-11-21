@@ -1,67 +1,62 @@
-# Status
+# Status — v0.2 (Demo Edition)
 
-Live board. WIP limit: 3. One work unit per agent.
-
-Last updated: 2026-11-17 18:52
+Last updated: 2026-11-21 05:45
 
 ## Phase
 
-**v0.1 Tier 1 complete; Tier 2 foundation complete.** Installed and verified.
+**P0 complete and verified.** The web UI, evidence graph, class PDFs, `.eml`
+outbox, MCP quality gate, Rails suite uplift, and demo seed are implemented.
+The installed binary is running at <http://127.0.0.1:3000>.
 
-## Verified evidence
+## Evidence
 
 ```text
-cargo fmt --all --check              clean
+cargo fmt --all --check                  clean
 cargo clippy --all-targets -- -D warnings
-                                     clean
-cargo test --all-targets             48 passed, 0 failed
-cargo install --path . --locked      installed laburo 0.1.0
-laburo doctor                        Rails/Minitest/SQLite/Typst/nextest
-laburo driver discover               2 fixture tests discovered
-laburo run auto TC-FIX --target ...  single run passed
-laburo tui (pseudo-terminal)         exit 0
-laburo mcp initialize/dashboard      valid JSON-RPC results
-laburo mcp full manual flow          create case -> run -> record step ->
-                                     attach evidence -> finish: status passed
+                                         clean
+cargo test --all-targets                 83 passed, 0 failed
+cargo install --path . --locked          laburo 0.1.0 installed
+bin/rails test                           71 runs, 358 assertions, 0 failures
+bin/rails test:system                    1 run, 13 assertions, 0 failures
 ```
 
-Real flows:
+Real seeded flows:
 
-- `/tmp/opencode/laburo-demo` — manual case with 3 steps, 1 failure, notes,
-  evidence, bug, and four PDFs (dictionary/case/run/bug).
-- `/tmp/opencode/laburo-fixture` — fake Rails app: doctor, Minitest discovery,
-  automated single run, MCP dashboard.
-- Real import from `src-elizabeth-tours/tqa/casos.yaml`: **21 test cases**.
+- Web routes `/`, `/search`, `/cases`, `/runs`, `/bugs`, `/reports`, `/drivers`,
+  `/quality`, `/email` all return 200.
+- **Run all filtered** (`tag=smoke`, mode auto): `attempted=2 created=2 passed=2
+  failed=0 manual-required=0 errors=0`; batch results page works.
+- **Web automation**: POST `/cases/TC-M01-01-1/automate` sets `single` +
+  `driver_target`; the case badge changes from manual to single.
+- **Evidence**: expected happy-path screenshot attached to two cases; per-step
+  log/artifact evidence; links (case ↔ bug/run) created from web and CLI.
+- **Email**: web and CLI create a standards-compliant `.eml` with the PDF
+  attached in `.laburo/outbox`; web lists/downloads it.
+- **Class PDFs**: dictionary (4 pages), case dossier (expected screenshot,
+  traceability, run history), run sheet (per-step evidence), bug report
+  (linked case/run, evidence); class layout/colors, no guide text.
+- **MCP**: 24 tools. `laburo_check_in tag smoke` starts `fail 40` (failed run +
+  critical bug); after the smoke batch and closing the bug it returns
+  `pass 100`.
+- **Rails uplift**: 71 tests / 358 assertions + 1 system test / 13 assertions;
+  real Chromium screenshot at
+  `src-elizabeth-tours/tmp/laburo-evidence/happy-path.png`.
+- **Demo seed**: `scripts/demo-seed.sh` resets only `.laburo`, imports 21 cases,
+  discovers 72 Minitest tests, maps 7 real targets, creates 3 runs, one bug,
+  expected artifacts, four PDFs, and one `.eml`.
+- **Web stale-DB fix**: the server reopens SQLite when `.laburo` changes.
 
-## What shipped
+## Remaining (author)
 
-- SQLite schema, migrations, repositories (cases, steps, tags, runs, step
-  results, evidence, bugs, drivers, requirements, traceability).
-- CLI: `init`, `doctor`, `case`, `run`, `bug`, `report`, `driver`, `import`,
-  `db`, `quality`, `mcp`, `tui`.
-- TUI: Cases, Runs, Bugs, Reports, Drivers, Dashboard; manual run flow; case
-  create/edit/delete; vim motions; TestBackend test.
-- Minitest driver: recursive discovery, targeted execution, ANSI stripping,
-  verbose/summary parsing, timeout.
-- Typst reports: class-format dictionary, case dossier, run sheet, bug report;
-  evidence images/logs.
-- `casos.yaml` one-way import into SQLite.
-- MCP stdio server: initialize, tools/list, tools/call (18 tools), including
-  full case CRUD, manual step recording, evidence attachment, and run
-  finalization.
-- Deterministic quality rules + AI boundary (OpenAI-compatible/Ollama,
-  disabled by default).
-- Install/doctor, Makefile, CI with Typst, per-pod build helper with sccache.
+- Record the 15-minute video using `DEMO.md`.
+- Create/push the public repo remote (repo is publishable; no secrets).
+- Optional P1: TUI rework, SMTP transport, charts/GIF, ngrok share token.
+- P2: Cucumber/Selenium, real nextest driver, Robot Framework.
 
-## Known gaps / deferred
+## Notes
 
-- Email notifier is deferred (behind the notifier boundary).
-- Cucumber/Selenium drivers are deferred; Gherkin is stored/rendered, not run.
-- Cargo-nextest driver is a boundary/stub, not a real runner.
-- TUI Drivers tab is read-only; automated runs and bug creation are CLI/MCP.
-- AI network path (live Ollama/OpenAI call) is not exercised in tests.
-- No background polling in the TUI; refresh happens on tab/mutation.
-
-## Deadline
-
-Stop by 2026-11-17 19:30. All acceptance criteria are met before the deadline.
+- SQLite is the only store; `casos.yaml` is import-only; reports are Typst
+  projections.
+- `.laburo/` is local and ignored; no secrets in the repo.
+- The demo server is running with the installed binary; stop with
+  `fuser -k 3000/tcp` if needed.

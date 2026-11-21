@@ -245,6 +245,17 @@ fn call_tool(server: &Server, params: &Value) -> std::result::Result<Value, Stri
         "laburo_generate_report" => tool_generate_report(server, args),
         "laburo_quality_check" => tool_quality_check(server, args),
         "laburo_dashboard" => tool_dashboard(server),
+        "laburo_check_in" => crate::mcp_quality::check_in_tool(&server.conn, args),
+        "laburo_find_tests" => crate::mcp_quality::find_tests_tool(&server.conn, args),
+        "laburo_link" => crate::mcp_quality::link_tool(&server.conn, args),
+        "laburo_unlink" => crate::mcp_quality::unlink_tool(&server.conn, args),
+        "laburo_list_links" => crate::mcp_quality::list_links_tool(&server.conn, args),
+        "laburo_record_evidence" => crate::mcp_quality::record_evidence_tool(
+            &server.config.root,
+            &server.config.data_dir,
+            &server.conn,
+            args,
+        ),
         other => {
             return Err(format!("unknown tool: {other}"));
         }
@@ -628,11 +639,26 @@ fn execute_automated(
     run: &TestRun,
     keep_going: bool,
 ) -> std::result::Result<Value, String> {
-    let targets: Vec<String> = case
-        .steps
-        .iter()
-        .filter_map(|step| step.driver_target.clone())
-        .collect();
+    let targets: Vec<String> = match run.mode {
+        RunMode::Manual => Vec::new(),
+        RunMode::Single => case.driver_target.iter().cloned().collect(),
+        RunMode::Composed => {
+            let mut targets: Vec<String> = case
+                .steps
+                .iter()
+                .filter_map(|step| step.driver_target.clone())
+                .collect();
+            if targets.is_empty() {
+                targets.extend(case.driver_target.iter().cloned());
+            }
+            targets
+        }
+    };
+    if targets.is_empty() {
+        let message = "case has no driver target for automated execution";
+        record_run_error(server, run, message);
+        return Err(format!("{message} (run {})", run.id));
+    }
     match driver::run_minitest(&server.config.root, &targets) {
         Ok(outcomes) if outcomes.is_empty() => {
             let message =
@@ -691,6 +717,10 @@ fn record_outcomes(
         };
         used[index] = true;
         let outcome = &outcomes[index];
+        let driver_test = step
+            .driver_test
+            .as_deref()
+            .unwrap_or(outcome.target.as_str());
         repo::record_step(
             &server.conn,
             &run.id,
@@ -699,7 +729,7 @@ fn record_outcomes(
             &outcome.message,
             &outcome.backtrace,
             outcome.duration_ms,
-            Some(outcome.target.as_str()),
+            Some(driver_test),
             &outcome.raw_output,
         )
         .map_err(|err| format!("recording step {}: {err:#}", step.position))?;
@@ -1151,7 +1181,7 @@ fn repo_error(err: anyhow::Error) -> String {
 }
 
 fn tool_definitions() -> Vec<Value> {
-    vec![
+    let mut tools = vec![
         json!({
             "name": "laburo_doctor",
             "description": "Inspect the project, database, and Minitest environment.",
@@ -1431,7 +1461,9 @@ fn tool_definitions() -> Vec<Value> {
                 "additionalProperties": false
             }
         }),
-    ]
+    ];
+    tools.extend(crate::mcp_quality::tool_definitions());
+    tools
 }
 
 #[cfg(test)]
@@ -1509,7 +1541,7 @@ mod tests {
 
         let response = dispatch(&server, &rpc(2, "tools/list", json!({}))).unwrap();
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 18);
+        assert_eq!(tools.len(), 24);
         for name in [
             "laburo_doctor",
             "laburo_list_cases",
@@ -1529,6 +1561,12 @@ mod tests {
             "laburo_generate_report",
             "laburo_quality_check",
             "laburo_dashboard",
+            "laburo_check_in",
+            "laburo_find_tests",
+            "laburo_link",
+            "laburo_unlink",
+            "laburo_list_links",
+            "laburo_record_evidence",
         ] {
             assert!(
                 tools.iter().any(|tool| tool["name"] == name),
